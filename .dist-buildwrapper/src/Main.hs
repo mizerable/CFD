@@ -21,7 +21,7 @@ data ValSet a = ValSet{
     ,areaVal::Map.Map Position (Map.Map Side a) }
 data Expression a = Expression{getTerms::[Term a]} 
 data Term a = Constant {val::a} | Unknown { coeff::a } | SubExpression {expression::Expression a} 
-    | Derivative { denom::Direction ,function:: Position->Side->a }
+    | Derivative { denom::Direction ,function:: Position->Side->a, centered::Side }
 
 direcDimenType:: Direction -> DimensionType
 direcDimenType direc = case direc of
@@ -64,15 +64,19 @@ addTerms terms1 terms2 = case terms2 of
 
 getSubExpression = getTerms.expression
 
+approximateDerivative:: Term a -> [Term a]
+approximateDerivative = undefined
+
 solveUnknown::(Fractional a)=> Equation (Term a)->a
 solveUnknown equation = 
     let sumUnknown n p =  p + case n of
             Unknown _-> coeff n
-            SubExpression _ -> sumExpression sumUnknown (getSubExpression n)
+            SubExpression _ -> sumExpression sumUnknown $ getSubExpression n
             _ -> 0
         sumConstants n p =  p + case n of
             Constant _-> val n
-            SubExpression _ -> sumExpression sumConstants (getSubExpression n)
+            Derivative _ _ _-> sumExpression sumConstants $ approximateDerivative n  
+            SubExpression _ -> sumExpression sumConstants $ getSubExpression n
             _ -> 0
         sumExpression s e = foldr s 0 e
         lhsUnknown = sumExpression sumUnknown (lhs equation)
@@ -102,9 +106,9 @@ distributeMultiply terms m =
             Constant _ -> [Constant (val term * m)]
             Unknown _ -> [Unknown (coeff term * m)]
             SubExpression _ -> distributeMultiply ( getSubExpression term  ) m
-            Derivative _ _-> 
+            Derivative _ _ _-> 
                 let modf x s =  function term x s * m
-                in [Derivative (denom term) modf]
+                in [Derivative (denom term) modf (centered term)]
     in concatMap mult terms    
 
 prop::Property->Position->Side->a
@@ -123,7 +127,7 @@ integSurface f position direction =
        
 integSingleTerm:: Term Double -> DimensionType -> Position ->[Term Double]
 integSingleTerm term dimetype cellposition =  case term of
-    Derivative _ _ ->  
+    Derivative _ _ _ ->  
         let direction = denom term
         in if dimetype == direcDimenType direction then integSurface ( cellposition |> function term) cellposition direction
             else distributeMultiply [term] $ volumeOrInterval dimetype cellposition   
@@ -135,17 +139,16 @@ integ dimetype terms cellposition = case terms of
     (x:xs) -> integSingleTerm x dimetype cellposition ++ integ dimetype xs cellposition   
        
 drho_dt:: (Num a)=> Term a       
-drho_dt =  Derivative Time (prop Density)
+drho_dt =  Derivative Time (prop Density) Center
 
 drhodu_dt:: (Num a)=> Term a
-drhodu_dt = Derivative Time (\x-> \s -> prop Density x s* prop U x s)
+drhodu_dt = Derivative Time (\x-> \s -> prop Density x s* prop U x s) Center
 
 drhodv_dt:: (Num a)=> Term a 
-drhodv_dt = Derivative Time (\x-> \s -> prop Density x s*prop V x s)
+drhodv_dt = Derivative Time (\x-> \s -> prop Density x s*prop V x s) Center
 
 drhodw_dt:: (Num a)=> Term a
-drhodw_dt = Derivative Time (\x-> \s -> prop Density x s*prop W x s)   
-
+drhodw_dt = Derivative Time (\x-> \s -> prop Density x s*prop W x s) Center  
 
 (>*>):: (c->a)->(a->c->a)->(c->a)
 (>*>) prev next = \input -> next (prev input) input  
@@ -161,7 +164,6 @@ continuity = Equation
     
 applyContinuity::(Num a)=>ValSet a->ValSet a 
 applyContinuity valset = undefined
-
 
 testTerms = [Unknown 2.4, Constant 1.2, Constant 3.112, Unknown (-0.21),  SubExpression (Expression [Constant 2, Constant 2, SubExpression (Expression [Unknown 0.33333])])]
 
