@@ -121,13 +121,18 @@ integSurface f position direction =
                 ( modf s*(sideArea s position |> fromJust))
     in [value (fst sides) True , value (snd sides) False]       
        
-integ:: Term Double -> DimensionType -> Position ->[Term Double]
-integ term dimetype cellposition =  case term of
+integSingleTerm:: Term Double -> DimensionType -> Position ->[Term Double]
+integSingleTerm term dimetype cellposition =  case term of
     Derivative _ _ ->  
         let direction = denom term
         in if dimetype == direcDimenType direction then integSurface ( cellposition |> function term) cellposition direction
             else distributeMultiply [term] $ volumeOrInterval dimetype cellposition   
     _ -> distributeMultiply [term] $ volumeOrInterval dimetype cellposition 
+
+integ::  DimensionType -> [Term Double] ->Position -> [Term Double]
+integ dimetype terms cellposition = case terms of
+    [] -> []
+    (x:xs) -> integSingleTerm x dimetype cellposition ++ integ dimetype xs cellposition   
        
 drho_dt:: (Num a)=> Term a       
 drho_dt =  Derivative Time (prop Density)
@@ -140,14 +145,18 @@ drhodv_dt = Derivative Time (\x-> \s -> prop Density x s*prop V x s)
 
 drhodw_dt:: (Num a)=> Term a
 drhodw_dt = Derivative Time (\x-> \s -> prop Density x s*prop W x s)   
+
+
+(>*>):: (c->a)->(a->c->a)->(c->a)
+(>*>) prev next = \input -> next (prev input) input  
      
 -- the only thing returned is the new value for the density at this position 
 continuity:: Equation (Position-> [Term Double])
 continuity = Equation
-    [integ drho_dt Temporal , 
-     integ drhodu_dt Spatial , 
-     integ drhodv_dt Spatial , 
-     integ drhodw_dt Spatial ] 
+    [ integ Temporal [drho_dt]  >*> (integ Spatial), 
+     integ  Spatial [drhodu_dt], 
+     integ Spatial [drhodv_dt] , 
+     integ  Spatial [drhodw_dt]] 
     []
     
 applyContinuity::(Num a)=>ValSet a->ValSet a 
