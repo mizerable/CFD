@@ -130,20 +130,32 @@ integ derivative direction cellposition
     | otherwise =  [Constant (function derivative cellposition Center * 
         volumeOrInterval (direcDimenType direction) cellposition )]            
        
+drho_dt:: (Num a)=> Derivative a       
+drho_dt =  Derivative Time (prop Density)
+
+drhodu_dt:: (Num a)=> Derivative a
+drhodu_dt = Derivative Time (\x-> \s -> (prop Density x s)*(prop U x s))
+
+drhodv_dt:: (Num a)=> Derivative a 
+drhodv_dt = Derivative Time (\x-> \s -> (prop Density x s)*(prop V x s))
+
+drhodw_dt:: (Num a)=> Derivative a
+drhodw_dt = Derivative Time (\x-> \s -> (prop Density x s)*(prop W x s))   
+     
 -- the only thing returned is the new value for the density at this position 
 continuity:: Equation (Position-> [Term Double])
 continuity = Equation
-    [integ (Derivative Time (prop Density)) Time , -- d_rho/d_t
-     integ (Derivative Time (prop Density)) Time , -- d_(rho*u)/d_x
-     integ (Derivative Time (prop Density)) Time , -- d_(rho*v)/d_y
-     integ (Derivative Time (prop Density)) Time ] -- d_(rho*w)/d_z
+    [integ drho_dt Time , 
+     integ drhodu_dt Time , 
+     integ drhodv_dt Time , 
+     integ drhodw_dt Time ] 
     []
     
 applyContinuity::(Num a)=>ValSet a->ValSet a 
 applyContinuity valset = undefined
 
 
-testTerms = [Unknown 2.4, Constant 1.2, Constant 3.112, Unknown (-0.21),  SubExpression (Expression [Constant 2, Constant 2, Unknown 0.25])]
+testTerms = [Unknown 2.4, Constant 1.2, Constant 3.112, Unknown (-0.21),  SubExpression (Expression [Constant 2, Constant 2, SubExpression (Expression [Unknown 0.33333])])]
 
 writeTerms:: (Num a, Show a)=> [Term a] -> String
 writeTerms terms =
