@@ -9,6 +9,7 @@ executable CFD
   main-is:         Main.hs
   build-depends:   base >= 4
   ghc-options:     -Wall
+  other-modules:   Main
 
 library 
   build-depends:   

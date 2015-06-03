@@ -15,15 +15,13 @@ data Position = Position {
     xPos::Int
     ,yPos::Int
     ,zPos::Int
-    ,timePos::Int } deriving (Eq, Ord)
-data Derivative a = Derivative{
-    denom::Direction
-    ,function:: Position->Side->a }
+    ,timePos::Double } deriving (Eq, Ord)
 data ValSet a = ValSet{
     vals:: Map.Map Position (Map.Map Property a)
     ,areaVal::Map.Map Position (Map.Map Side a) }
 data Expression a = Expression{getTerms::[Term a]} 
 data Term a = Constant {val::a} | Unknown { coeff::a } | SubExpression {expression::Expression a} 
+    | Derivative { denom::Direction ,function:: Position->Side->a }
 
 direcDimenType:: Direction -> DimensionType
 direcDimenType direc = case direc of
@@ -109,6 +107,9 @@ distributeMultiply terms m =
             Constant _ -> [Constant (val term * m)]
             Unknown _ -> [Unknown (coeff term * m)]
             SubExpression _ -> distributeMultiply ( getSubExpression term  ) m
+            Derivative _ _-> 
+                let modf x s =  function term x s * m
+                in [Derivative (denom term) modf]
     in concatMap mult terms    
 
 prop::Property->Position->Side->a
@@ -118,31 +119,29 @@ integSurface:: (Num a)=> (Side->a) -> Position -> Direction -> [Term a]
 integSurface f position direction =
     let sides = boundaryPair direction 
         value s isUpper =
-            let modf = if isUpper == True then f else (\x-> x * (-1)).f 
+            let modf = if isUpper then f else (\x-> x * (-1)).f 
             in (case (direcDimenType direction,isUpper) of
                 (Temporal,True) -> Unknown
                 _ -> Constant)
                 ( modf s*(sideArea s position |> fromJust))
     in [value (fst sides) True , value (snd sides) False]       
        
-integ:: Derivative Double -> Direction -> Position ->[Term Double]
-integ derivative direction cellposition
-    | direcIntegType direction == direcIntegType (denom derivative)
-        = integSurface ( cellposition |> function derivative) cellposition direction 
-    | otherwise =  [Constant (function derivative cellposition Center * 
-        volumeOrInterval (direcDimenType direction) cellposition )]            
+integ:: Term Double -> Direction -> Position ->[Term Double]
+integ term direction cellposition = case (term , (direcIntegType direction) == direcIntegType (denom term)) of
+    (Derivative _ _  , True) -> integSurface ( cellposition |> function term) cellposition direction 
+    _ -> distributeMultiply [term] $ volumeOrInterval (direcDimenType direction) cellposition  
        
-drho_dt:: (Num a)=> Derivative a       
+drho_dt:: (Num a)=> Term a       
 drho_dt =  Derivative Time (prop Density)
 
-drhodu_dt:: (Num a)=> Derivative a
-drhodu_dt = Derivative Time (\x-> \s -> (prop Density x s)*(prop U x s))
+drhodu_dt:: (Num a)=> Term a
+drhodu_dt = Derivative Time (\x-> \s -> prop Density x s* prop U x s)
 
-drhodv_dt:: (Num a)=> Derivative a 
-drhodv_dt = Derivative Time (\x-> \s -> (prop Density x s)*(prop V x s))
+drhodv_dt:: (Num a)=> Term a 
+drhodv_dt = Derivative Time (\x-> \s -> prop Density x s*prop V x s)
 
-drhodw_dt:: (Num a)=> Derivative a
-drhodw_dt = Derivative Time (\x-> \s -> (prop Density x s)*(prop W x s))   
+drhodw_dt:: (Num a)=> Term a
+drhodw_dt = Derivative Time (\x-> \s -> prop Density x s*prop W x s)   
      
 -- the only thing returned is the new value for the density at this position 
 continuity:: Equation (Position-> [Term Double])
