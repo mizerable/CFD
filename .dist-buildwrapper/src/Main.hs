@@ -154,9 +154,9 @@ drhodw_dt = Derivative Time (\x-> \s -> prop Density x s*prop W x s)
 continuity:: Equation (Position-> [Term Double])
 continuity = Equation
     [ integ Temporal [drho_dt]  >*> (integ Spatial), 
-     integ  Spatial [drhodu_dt], 
-     integ Spatial [drhodv_dt] , 
-     integ  Spatial [drhodw_dt]] 
+     integ  Spatial [drhodu_dt] >*> (integ Temporal), 
+     integ Spatial [drhodv_dt] >*> (integ Temporal), 
+     integ  Spatial [drhodw_dt]>*> (integ Temporal) ] 
     []
     
 applyContinuity::(Num a)=>ValSet a->ValSet a 
