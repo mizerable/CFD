@@ -23,7 +23,7 @@ data Derivative a = Derivative{
 data ValSet a = ValSet{
     vals:: Map.Map Position (Map.Map Property a)
     ,areaVal::Map.Map Position (Map.Map Side a) }
-data Expression a = Expression{getTerms::[Term a]}
+data Expression a = Expression{getTerms::[Term a]} 
 data Term a = Constant {val::a} | Unknown { coeff::a } | SubExpression {expression::Expression a} 
 
 direcDimenType:: Direction -> DimensionType
@@ -65,15 +65,17 @@ addTerms terms1 terms2 = case terms2 of
     (x:xs) -> addTerms (addTerm terms1 x) xs
     _ -> terms1
 
+getSubExpression = getTerms.expression
+
 solveUnknown::(Fractional a)=> Equation a->a
 solveUnknown equation = 
     let sumUnknown n p =  p + case n of
             Unknown _-> coeff n
-            SubExpression _ -> sumExpression sumUnknown (expression n |> getTerms)
+            SubExpression _ -> sumExpression sumUnknown (getSubExpression n)
             _ -> 0
         sumConstants n p =  p + case n of
             Constant _-> val n
-            SubExpression _ -> sumExpression sumConstants (expression n |> getTerms)
+            SubExpression _ -> sumExpression sumConstants (getSubExpression n)
             _ -> 0
         sumExpression s e = foldr s 0 e
         lhsUnknown = sumExpression sumUnknown (lhs equation)
@@ -107,8 +109,8 @@ distributeMultiply terms m =
     let mult term = case term of
             Constant _ -> [Constant (val term * m)]
             Unknown _ -> [Unknown (coeff term * m)]
-            SubExpression _ -> distributeMultiply ( (getTerms.expression) term  ) m
-    in undefined    
+            SubExpression _ -> distributeMultiply ( getSubExpression term  ) m
+    in concatMap mult terms    
 
 prop::Property->Side->Position->a
 prop property side position = undefined
@@ -136,6 +138,19 @@ applyContinuity::(Num a)=>ValSet a->ValSet a
 applyContinuity valset = undefined
 
 
+testTerms = [Unknown 2.4, Constant 1.2, Constant 3.112, Unknown (-0.21),  SubExpression (Expression [Constant 2, Constant 2, Unknown 0.25])]
+
+writeTerms:: (Num a, Show a)=> [Term a] -> String
+writeTerms terms =
+    let writeTerm t prev = prev ++ case t of
+            Unknown _ -> show (coeff t) ++ "X + "
+            Constant _ -> show (val t) ++ " + "
+            SubExpression _ -> writeTerms (getSubExpression t) ++ " + "
+    in foldr writeTerm " " (terms |> reverse)  
+
 main:: IO()
-main = putStrLn ( (show.solveUnknown) testEquation )
+main = 
+    putStrLn ( (show.solveUnknown) testEquation )
+    >>= \_ -> putStrLn $ writeTerms $ distributeMultiply testTerms 2
+
 
