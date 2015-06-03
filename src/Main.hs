@@ -7,8 +7,8 @@ data Side = East | West | North | South | Top | Bottom | Now | Prev | Center der
 data Direction = Time | X | Y | Z deriving (Enum)
 data DimensionType = Temporal | Spatial
 data Equation a = Equation{
-    rhs::[Term a]
-    ,lhs::[Term a] }
+    rhs::[a]
+    ,lhs::[a]}    
 data IntegralType = Body | Surface deriving (Eq)
 data Property = U | V | W | Density | Temperature
 data Position = Position {
@@ -18,7 +18,6 @@ data Position = Position {
     ,timePos::Int } deriving (Eq, Ord)
 data Derivative a = Derivative{
     denom::Direction
-    ,numer::Property
     ,function:: Position->Side->a }
 data ValSet a = ValSet{
     vals:: Map.Map Position (Map.Map Property a)
@@ -67,7 +66,7 @@ addTerms terms1 terms2 = case terms2 of
 
 getSubExpression = getTerms.expression
 
-solveUnknown::(Fractional a)=> Equation a->a
+solveUnknown::(Fractional a)=> Equation (Term a)->a
 solveUnknown equation = 
     let sumUnknown n p =  p + case n of
             Unknown _-> coeff n
@@ -84,7 +83,7 @@ solveUnknown equation =
         rhsConstants = sumExpression sumConstants (rhs equation)
     in (rhsConstants - lhsConstants)/(lhsUnknown-rhsUnknown)
         
-testEquation:: Equation Double
+testEquation:: Equation (Term Double)
 testEquation = 
     Equation 
         --[Unknown 2, Constant 4, Constant (-0.232)]
@@ -112,14 +111,17 @@ distributeMultiply terms m =
             SubExpression _ -> distributeMultiply ( getSubExpression term  ) m
     in concatMap mult terms    
 
-prop::Property->Side->Position->a
+prop::Property->Position->Side->a
 prop property side position = undefined
 
 integSurface:: (Num a)=> (Side->a) -> Position -> Direction -> [Term a]
 integSurface f position direction =
     let sides = boundaryPair direction 
-        value s = Constant (f s*(sideArea s position |> fromJust))
-    in [value (fst sides) , value (snd sides)]       
+        value s isUpper = (case (direcDimenType direction,isUpper) of
+            (Temporal,True) -> Unknown
+            _ -> Constant)
+            (f s*(sideArea s position |> fromJust))
+    in [value (fst sides) True , value (snd sides) False]       
        
 integ:: Derivative Double -> Direction -> Position ->[Term Double]
 integ derivative direction cellposition
@@ -129,11 +131,14 @@ integ derivative direction cellposition
         volumeOrInterval (direcDimenType direction) cellposition )]            
        
 -- the only thing returned is the new value for the density at this position 
-continuity::(Num a)=> Position -> a
-continuity pos =
-    -- drho/dt 
-    undefined
-
+continuity:: Equation (Position-> [Term Double])
+continuity = Equation
+    [integ (Derivative Time (prop Density)) Time , -- d_rho/d_t
+     integ (Derivative Time (prop Density)) Time , -- d_(rho*u)/d_x
+     integ (Derivative Time (prop Density)) Time , -- d_(rho*v)/d_y
+     integ (Derivative Time (prop Density)) Time ] -- d_(rho*w)/d_z
+    []
+    
 applyContinuity::(Num a)=>ValSet a->ValSet a 
 applyContinuity valset = undefined
 
