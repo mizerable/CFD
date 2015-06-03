@@ -117,10 +117,12 @@ prop property side position = undefined
 integSurface:: (Num a)=> (Side->a) -> Position -> Direction -> [Term a]
 integSurface f position direction =
     let sides = boundaryPair direction 
-        value s isUpper = (case (direcDimenType direction,isUpper) of
-            (Temporal,True) -> Unknown
-            _ -> Constant)
-            (f s*(sideArea s position |> fromJust))
+        value s isUpper =
+            let modf = if isUpper == True then f else (\x-> x * (-1)).f 
+            in (case (direcDimenType direction,isUpper) of
+                (Temporal,True) -> Unknown
+                _ -> Constant)
+                ( modf s*(sideArea s position |> fromJust))
     in [value (fst sides) True , value (snd sides) False]       
        
 integ:: Derivative Double -> Direction -> Position ->[Term Double]
