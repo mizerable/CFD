@@ -5,7 +5,7 @@ import Data.Maybe
 
 data Side = East | West | North | South | Top | Bottom | Now | Prev | Center deriving (Show,Eq,Ord)
 data Direction = Time | X | Y | Z deriving (Enum)
-data DimensionType = Temporal | Spatial
+data DimensionType = Temporal | Spatial deriving ( Eq)
 data Equation a = Equation{
     rhs::[a]
     ,lhs::[a]}    
@@ -88,11 +88,6 @@ testEquation =
         [Unknown 2, SubExpression (Expression [Constant 2, Constant 2, Unknown 0.025]), Constant (-0.232)] 
         ([Constant 2, Constant 3 ] |> addTerms [Unknown (-0.025),Unknown (-0.05)])
 
-direcIntegType:: Direction -> IntegralType
-direcIntegType direction = case direction of 
-    Time -> Body
-    _ -> Surface
-
 (|>)::a->(a->b)->b
 (|>) x y = y x
 
@@ -126,10 +121,13 @@ integSurface f position direction =
                 ( modf s*(sideArea s position |> fromJust))
     in [value (fst sides) True , value (snd sides) False]       
        
-integ:: Term Double -> Direction -> Position ->[Term Double]
-integ term direction cellposition = case (term , (direcIntegType direction) == direcIntegType (denom term)) of
-    (Derivative _ _  , True) -> integSurface ( cellposition |> function term) cellposition direction 
-    _ -> distributeMultiply [term] $ volumeOrInterval (direcDimenType direction) cellposition  
+integ:: Term Double -> DimensionType -> Position ->[Term Double]
+integ term dimetype cellposition =  case term of
+    Derivative _ _ ->  
+        let direction = denom term
+        in if dimetype == direcDimenType direction then integSurface ( cellposition |> function term) cellposition direction
+            else distributeMultiply [term] $ volumeOrInterval dimetype cellposition   
+    _ -> distributeMultiply [term] $ volumeOrInterval dimetype cellposition 
        
 drho_dt:: (Num a)=> Term a       
 drho_dt =  Derivative Time (prop Density)
@@ -146,10 +144,10 @@ drhodw_dt = Derivative Time (\x-> \s -> prop Density x s*prop W x s)
 -- the only thing returned is the new value for the density at this position 
 continuity:: Equation (Position-> [Term Double])
 continuity = Equation
-    [integ drho_dt Time , 
-     integ drhodu_dt Time , 
-     integ drhodv_dt Time , 
-     integ drhodw_dt Time ] 
+    [integ drho_dt Temporal , 
+     integ drhodu_dt Spatial , 
+     integ drhodv_dt Spatial , 
+     integ drhodw_dt Spatial ] 
     []
     
 applyContinuity::(Num a)=>ValSet a->ValSet a 
