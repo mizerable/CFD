@@ -83,7 +83,7 @@ volumeOrInterval dimetype position = case dimetype of
         let getSide f x = sideArea ((f.boundaryPair) x) position |> fromJust 
         in enumFrom X
             |> map (\x-> average [ getSide fst x , getSide snd x])
-            |> average
+            |> foldr (*) 1
 
 addTerm:: [Term a]->Term a->[Term a]
 addTerm terms term = terms ++ [term]
@@ -154,7 +154,10 @@ sideArea s position =  areaVal grid |> Map.lookup position >>= Map.lookup s
 sideLength d position = sideLen grid |> Map.lookup position >>= Map.lookup d
 
 grid::(Num a) => ValSet a
-grid = undefined
+grid= undefined
+
+initialGrid::(Num a) => ValSet a
+initialGrid= undefined
 
 distributeMultiply::(Num a)=> [Term a]->a->[Term a]
 distributeMultiply terms m =
@@ -206,16 +209,16 @@ drhodv_dt = Derivative Time (\x-> \s -> prop Density x s*prop V x s) Center
 drhodw_dt:: (Num a)=> Term a
 drhodw_dt = Derivative Time (\x-> \s -> prop Density x s*prop W x s) Center  
 
-(>*>):: (c->a)->(a->c->a)->(c->a)
+(>*>):: (c->a)->(a->c->a)->c->a
 (>*>) prev next = \input -> next (prev input) input  
      
 -- the only thing returned is the new value for the density at this position 
 continuity:: Equation (Position-> [Term Double])
 continuity = Equation
-    [ integ Temporal [drho_dt]  >*> (integ Spatial), 
-     integ  Spatial [drhodu_dt] >*> (integ Temporal), 
-     integ Spatial [drhodv_dt] >*> (integ Temporal), 
-     integ  Spatial [drhodw_dt]>*> (integ Temporal) ] 
+    [ integ Temporal [drho_dt]  >*> integ Spatial, 
+     integ  Spatial [drhodu_dt] >*> integ Temporal, 
+     integ Spatial [drhodv_dt] >*> integ Temporal, 
+     integ  Spatial [drhodw_dt]>*> integ Temporal ] 
     []
     
 applyContinuity::(Num a)=>ValSet a->ValSet a 

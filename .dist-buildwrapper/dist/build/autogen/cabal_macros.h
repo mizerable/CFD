@@ -14,6 +14,13 @@
   (major1) == 0 && (major2) <  5 || \
   (major1) == 0 && (major2) == 5 && (minor) <= 5)
 
+/* package mtl-2.1.3.1 */
+#define VERSION_mtl "2.1.3.1"
+#define MIN_VERSION_mtl(major1,major2,minor) (\
+  (major1) <  2 || \
+  (major1) == 2 && (major2) <  1 || \
+  (major1) == 2 && (major2) == 1 && (minor) <= 3)
+
 /* package unordered-containers-0.2.5.1 */
 #define VERSION_unordered_containers "0.2.5.1"
 #define MIN_VERSION_unordered_containers(major1,major2,minor) (\
