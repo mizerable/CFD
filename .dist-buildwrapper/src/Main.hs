@@ -3,8 +3,7 @@ module Main where
 import qualified Data.Map as Map 
 import Data.Maybe
 import Control.Monad.State as State
-
-type DomainState a= State (ValSet a) a  
+  
 data Side = East | West | North | South | Top | Bottom | Now | Prev | Center deriving (Show,Eq,Ord)
 data Direction = Time | X | Y | Z deriving (Enum,Ord,Eq)
 data DimensionType = Temporal | Spatial deriving ( Eq)
@@ -175,7 +174,7 @@ distributeMultiply terms m =
 prop:: ValSet a ->Property->Position->Side->a
 prop state property position side = evalState (propState property position side) state   
 
-propState:: Property->Position->Side-> DomainState a
+propState:: Property->Position->Side-> State (ValSet a) a
 propState property position side = undefined
 
 integSurface:: (Num a)=> (Side->a) -> Position -> Direction -> [Term a]
@@ -203,16 +202,16 @@ integ dimetype terms cellposition = case terms of
     (x:xs) -> integSingleTerm x dimetype cellposition ++ integ dimetype xs cellposition   
        
 drho_dt:: (Num a)=> Term a       
-drho_dt =  Derivative Time (prop Density) Center
+drho_dt =  undefined --Derivative Time (prop Density) Center
 
 drhodu_dt:: (Num a)=> Term a
-drhodu_dt = Derivative Time (\x-> \s -> prop Density x s* prop U x s) Center
+drhodu_dt =  undefined -- Derivative Time (\x-> \s -> prop Density x s* prop U x s) Center
 
 drhodv_dt:: (Num a)=> Term a 
-drhodv_dt = Derivative Time (\x-> \s -> prop Density x s*prop V x s) Center
+drhodv_dt =  undefined -- Derivative Time (\x-> \s -> prop Density x s*prop V x s) Center
 
 drhodw_dt:: (Num a)=> Term a
-drhodw_dt = Derivative Time (\x-> \s -> prop Density x s*prop W x s) Center  
+drhodw_dt =  undefined -- Derivative Time (\x-> \s -> prop Density x s*prop W x s) Center  
 
 (>*>):: (c->a)->(a->c->a)->c->a
 (>*>) prev next = \input -> next (prev input) input  
@@ -224,10 +223,36 @@ continuity = Equation
      integ  Spatial [drhodu_dt] >*> integ Temporal, 
      integ Spatial [drhodv_dt] >*> integ Temporal, 
      integ  Spatial [drhodw_dt]>*> integ Temporal ] 
-    []
+    [\_ -> [Constant 0]]
     
-applyContinuity::(Num a)=>ValSet a->ValSet a 
-applyContinuity valset = undefined
+applyContinuity:: State (ValSet a) () 
+applyContinuity = state $ \prev -> ((),prev)
+
+applyUMomentum:: State (ValSet a) () 
+applyUMomentum = state $ \prev -> ((),prev)
+
+applyVMomentum::State (ValSet a) () 
+applyVMomentum  = state $ \prev -> ((),prev)
+
+applyWMomentum::  State (ValSet a) () 
+applyWMomentum = state $ \prev -> ((),prev)
+
+applyEnergy:: State (ValSet a) () 
+applyEnergy   = state $ \prev -> ((),prev)
+
+applyGasLaw:: State (ValSet a) () 
+applyGasLaw = state $ \prev -> ((),prev)
+
+runTimeSteps:: (Num a) => State (ValSet a) [()]
+runTimeSteps =  mapM 
+        (\_ ->  applyContinuity
+            >>= \_ -> applyUMomentum
+            >>= \_ -> applyVMomentum
+            >>= \_ -> applyWMomentum
+            >>= \_ -> applyEnergy
+            >>= \_ -> applyGasLaw ) 
+        [1..10] 
+    
 
 testTerms = [Unknown 2.4, Constant 1.2, Constant 3.112, Unknown (-0.21),  SubExpression (Expression [Constant 2, Constant 2, SubExpression (Expression [Unknown 0.33333])])]
 
