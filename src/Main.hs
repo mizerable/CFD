@@ -4,7 +4,7 @@ import qualified Data.Map as Map
 import Data.Maybe
 
 data Side = East | West | North | South | Top | Bottom | Now | Prev | Center deriving (Show,Eq,Ord)
-data Direction = Time | X | Y | Z deriving (Enum)
+data Direction = Time | X | Y | Z deriving (Enum,Ord,Eq)
 data DimensionType = Temporal | Spatial deriving ( Eq)
 data Equation a = Equation{
     rhs::[a]
@@ -18,7 +18,8 @@ data Position = Position {
     ,timePos::Double } deriving (Eq, Ord)
 data ValSet a = ValSet{
     vals:: Map.Map Position (Map.Map Property a)
-    ,areaVal::Map.Map Position (Map.Map Side a) }
+    ,areaVal::Map.Map Position (Map.Map Side a)
+    ,sideLen:: Map.Map Position (Map.Map Direction a) }
 data Expression a = Expression{getTerms::[Term a]} 
 data Term a = Constant {val::a} | Unknown { coeff::a } | SubExpression {expression::Expression a} 
     | Derivative { denom::Direction ,function:: Position->Side->a, centered::Side }
@@ -37,12 +38,43 @@ average terms =
 timeStep::Double
 timeStep = 0.0001 
 
+isUpperSide:: Side -> Bool
+isUpperSide side = case side of
+    East -> True
+    North -> True
+    Top -> True
+    Now -> True 
+    _->False
+
 boundaryPair:: Direction -> (Side,Side)
 boundaryPair d = case d of 
      X -> (East,West)
      Y -> (North,South)
      Z -> (Top,Bottom)
      Time -> (Now,Prev)
+
+orthogonalSides:: Side ->[Side]
+orthogonalSides side = case side of
+    East -> [North, South, Top, Bottom]
+    West -> [North, South, Top, Bottom]
+    North -> [East, West, Top,Bottom]
+    South -> [East, West, Top,Bottom]
+    Top -> [East,West,North,South]
+    Bottom -> [East,West,North,South]
+    Now -> [Now,Prev]
+    Prev -> [Now,Prev]
+    Center -> [Center]
+
+directionFromCenter:: Side-> Direction
+directionFromCenter side = case side of
+    East -> X
+    West -> X
+    North -> Y
+    South -> Y
+    Top -> Z
+    Bottom -> Z
+    Now -> Time
+    Prev -> Time
 
 volumeOrInterval:: DimensionType -> Position -> Double
 volumeOrInterval dimetype position = case dimetype of
@@ -64,18 +96,41 @@ addTerms terms1 terms2 = case terms2 of
 
 getSubExpression = getTerms.expression
 
-approximateDerivative:: Term a -> [Term a]
-approximateDerivative = undefined
+approximateDerivative::(Num a, Fractional a)=> Term a -> Position-> [Term a]
+approximateDerivative deriv position= case deriv of 
+    Derivative _ _ _ -> 
+        let side = centered deriv
+            neighbor = offsetPosition position side
+            direction = denom deriv 
+            interval = average [ sideLength direction position |> fromJust, sideLength direction neighbor |> fromJust]
+            thisVal = function deriv position Center
+            neighborVal = function deriv neighbor Center
+            f first = if isUpperSide side && first then neighborVal else thisVal
+        in if direction == denom deriv
+            then distributeMultiply [ Constant (f True) , Constant ( (-1)*f False) ] (1/interval)
+            else 
+                let proxyNeighbor p t = function deriv (offsetPosition p $ t $ boundaryPair direction) Center 
+                    thisProxyNeighborA = proxyNeighbor position fst
+                    thisProxyNeighborB = proxyNeighbor position snd
+                    neighborProxyNeighborA = proxyNeighbor neighbor fst
+                    neighborProxyNeighborB = proxyNeighbor neighbor snd 
+                in distributeMultiply [ Constant (average [thisProxyNeighborA,neighborProxyNeighborA])
+                    , Constant ((-1)* average [thisProxyNeighborB,neighborProxyNeighborB]) ] 
+                    (1/sideLength direction position|> fromJust)
+    _->[]
 
-solveUnknown::(Fractional a)=> Equation (Term a)->a
-solveUnknown equation = 
+offsetPosition:: Position->Side ->Position
+offsetPosition position side = undefined
+
+solveUnknown::(Fractional a)=> Equation (Term a)->Position->a
+solveUnknown equation position= 
     let sumUnknown n p =  p + case n of
             Unknown _-> coeff n
             SubExpression _ -> sumExpression sumUnknown $ getSubExpression n
             _ -> 0
         sumConstants n p =  p + case n of
             Constant _-> val n
-            Derivative _ _ _-> sumExpression sumConstants $ approximateDerivative n  
+            Derivative _ _ _-> sumExpression sumConstants $ approximateDerivative n position  
             SubExpression _ -> sumExpression sumConstants $ getSubExpression n
             _ -> 0
         sumExpression s e = foldr s 0 e
@@ -95,7 +150,8 @@ testEquation =
 (|>)::a->(a->b)->b
 (|>) x y = y x
 
-sideArea s position =  areaVal grid |> Map.lookup position >>= Map.lookup s
+sideArea s position =  areaVal grid |> Map.lookup position >>= Map.lookup s 
+sideLength d position = sideLen grid |> Map.lookup position >>= Map.lookup d
 
 grid::(Num a) => ValSet a
 grid = undefined
@@ -177,7 +233,7 @@ writeTerms terms =
 
 main:: IO()
 main = 
-    putStrLn ( (show.solveUnknown) testEquation )
+    print ( solveUnknown testEquation $ Position 0 0 0 0.0) 
     >>= \_ -> putStrLn $ writeTerms $ distributeMultiply testTerms 2
 
 
