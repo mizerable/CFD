@@ -216,9 +216,9 @@ drhodw_dt =  undefined -- Derivative Time (\x-> \s -> prop Density x s*prop W x 
 continuity:: Equation (Position-> [Term Double])
 continuity = Equation
     [integ Temporal [drho_dt]  >*> integ Spatial, 
-     integ  Spatial [drhodu_dt] >*> integ Temporal, 
+     integ Spatial [drhodu_dt] >*> integ Temporal, 
      integ Spatial [drhodv_dt] >*> integ Temporal, 
-     integ  Spatial [drhodw_dt] >*> integ Temporal ] 
+     integ Spatial [drhodw_dt] >*> integ Temporal ] 
     [\_ -> [Constant 0]]
     
 uMomentum:: Equation (Position-> [Term Double])
@@ -236,21 +236,25 @@ energy = undefined
 gasLaw:: Equation (Position-> [Term Double])
 gasLaw= undefined        
     
-applyDiffEq :: ValSet a -> Equation (Position -> [Term a]) -> ValSet a    
+getUnknownPropertyType:: Equation a -> Property
+getUnknownPropertyType = undefined    
+    
+applyDiffEq :: (Fractional a)=>ValSet a -> Equation (Position -> [Term a]) -> ValSet a    
 applyDiffEq (ValSet p v av sl) (Equation l r ) =
     let newVals = foldr
             (\pos -> \dict -> 
-                let subDict = Map.lookup pos |> fromJust
-                    newValue = Equation 
-                            map (\t -> t pos) l
-                            map (\t -> t pos) r
-                        |> solveUnknown pos  
-                in 
-                    |> \newVal -> Map.insert pos newVal dict) -- use the equation to solve for new value for this property for this spot  
+                let subDict = fromJust $ Map.lookup pos dict
+                    discEquation= Equation 
+                        (concatMap (\t -> t pos) l) 
+                        (concatMap (\t -> t pos) r)
+                    property = getUnknownPropertyType discEquation
+                    newValue = solveUnknown discEquation pos  
+                in Map.insert pos (Map.insert property newValue subDict) dict
+            )  
             v p 
     in ValSet p newVals av sl
     
-updateDomain:: Equation (Position -> [Term a]) -> State (ValSet a) ()
+updateDomain::(Fractional a)=> Equation (Position -> [Term a]) -> State (ValSet a) ()
 updateDomain equation = state $ \prev -> ((),applyDiffEq prev equation)       
   
 runTimeSteps:: State (ValSet Double) [()]
