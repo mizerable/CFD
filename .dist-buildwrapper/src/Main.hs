@@ -2,7 +2,9 @@ module Main where
 
 import qualified Data.Map as Map 
 import Data.Maybe
+import Control.Monad.State as State
 
+type DomainState a= State (ValSet a) a  
 data Side = East | West | North | South | Top | Bottom | Now | Prev | Center deriving (Show,Eq,Ord)
 data Direction = Time | X | Y | Z deriving (Enum,Ord,Eq)
 data DimensionType = Temporal | Spatial deriving ( Eq)
@@ -170,8 +172,11 @@ distributeMultiply terms m =
                 in [Derivative (denom term) modf (centered term)]
     in concatMap mult terms    
 
-prop::Property->Position->Side->a
-prop property side position = undefined
+prop:: ValSet a ->Property->Position->Side->a
+prop state property position side = evalState (propState property position side) state   
+
+propState:: Property->Position->Side-> DomainState a
+propState property position side = undefined
 
 integSurface:: (Num a)=> (Side->a) -> Position -> Direction -> [Term a]
 integSurface f position direction =
