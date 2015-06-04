@@ -18,7 +18,8 @@ data Position = Position {
     ,zPos::Int
     ,timePos::Double } deriving (Eq, Ord)
 data ValSet a = ValSet{
-    vals:: Map.Map Position (Map.Map Property a)
+    positions:: [Position]
+    ,vals:: Map.Map Position (Map.Map Property a)
     ,areaVal::Map.Map Position (Map.Map Side a)
     ,sideLen:: Map.Map Position (Map.Map Direction a) }
 data Expression a = Expression{getTerms::[Term a]} 
@@ -95,50 +96,46 @@ addTerms terms1 terms2 = case terms2 of
     (x:xs) -> addTerms (addTerm terms1 x) xs
     _ -> terms1
 
-getSubExpression = getTerms.expression
-
 approximateDerivative::(Num a, Fractional a)=> Term a -> Position-> [Term a]
 approximateDerivative deriv position= case deriv of 
-    Derivative _ _ _ -> 
-        let side = centered deriv
-            neighbor = offsetPosition position side
-            direction = denom deriv 
+    (Derivative direction func side) ->
+        let neighbor = offsetPosition position side 
             interval = average [ sideLength direction position |> fromJust, sideLength direction neighbor |> fromJust]
-            thisVal = function deriv position Center
-            neighborVal = function deriv neighbor Center
+            thisVal = func position Center
+            neighborVal = func neighbor Center
             f first = if isUpperSide side && first then neighborVal else thisVal
-        in if direction == denom deriv
+        in if direction == directionFromCenter side 
             then distributeMultiply [ Constant (f True) , Constant ( (-1)*f False) ] (1/interval)
             else 
-                let proxyNeighbor p t = function deriv (offsetPosition p $ t $ boundaryPair direction) Center 
+                let proxyNeighbor p t = func (offsetPosition p $ t $ boundaryPair direction) Center 
                     thisProxyNeighborA = proxyNeighbor position fst
                     thisProxyNeighborB = proxyNeighbor position snd
                     neighborProxyNeighborA = proxyNeighbor neighbor fst
                     neighborProxyNeighborB = proxyNeighbor neighbor snd 
                 in distributeMultiply [ Constant (average [thisProxyNeighborA,neighborProxyNeighborA])
                     , Constant ((-1)* average [thisProxyNeighborB,neighborProxyNeighborB]) ] 
-                    (1/sideLength direction position|> fromJust)
-    _->[]
+                    (1/sideLength direction position|> fromJust)    
+    _ -> []
 
 offsetPosition:: Position->Side ->Position
 offsetPosition position side = undefined
 
 solveUnknown::(Fractional a)=> Equation (Term a)->Position->a
-solveUnknown equation position= 
+solveUnknown (Equation l r) position= 
     let sumUnknown n p =  p + case n of
-            Unknown _-> coeff n
-            SubExpression _ -> sumExpression sumUnknown $ getSubExpression n
+            Unknown u-> u
+            SubExpression s -> sumExpression sumUnknown $ getTerms s
             _ -> 0
         sumConstants n p =  p + case n of
-            Constant _-> val n
+            Constant c-> c
             Derivative _ _ _-> sumExpression sumConstants $ approximateDerivative n position  
-            SubExpression _ -> sumExpression sumConstants $ getSubExpression n
+            SubExpression s -> sumExpression sumConstants $ getTerms s
             _ -> 0
         sumExpression s e = foldr s 0 e
-        lhsUnknown = sumExpression sumUnknown (lhs equation)
-        rhsUnknown = sumExpression sumUnknown (rhs equation)
-        lhsConstants = sumExpression sumConstants (lhs equation)
-        rhsConstants = sumExpression sumConstants (rhs equation)
+        lhsUnknown = sumExpression sumUnknown l
+        rhsUnknown = sumExpression sumUnknown r
+        lhsConstants = sumExpression sumConstants l
+        rhsConstants = sumExpression sumConstants r
     in (rhsConstants - lhsConstants)/(lhsUnknown-rhsUnknown)
         
 testEquation:: Equation (Term Double)
@@ -163,12 +160,12 @@ initialGrid= undefined
 distributeMultiply::(Num a)=> [Term a]->a->[Term a]
 distributeMultiply terms m =
     let mult term = case term of
-            Constant _ -> [Constant (val term * m)]
-            Unknown _ -> [Unknown (coeff term * m)]
-            SubExpression _ -> distributeMultiply ( getSubExpression term  ) m
-            Derivative _ _ _-> 
-                let modf x s =  function term x s * m
-                in [Derivative (denom term) modf (centered term)]
+            Constant c -> [Constant (c * m)]
+            Unknown u -> [Unknown (u * m)]
+            SubExpression s -> distributeMultiply ( getTerms s  ) m
+            Derivative direc func side-> 
+                let modf x s =  func x s * m
+                in [Derivative direc modf side]
     in concatMap mult terms    
 
 prop:: ValSet a ->Property->Position->Side->a
@@ -190,10 +187,9 @@ integSurface f position direction =
        
 integSingleTerm:: Term Double -> DimensionType -> Position ->[Term Double]
 integSingleTerm term dimetype cellposition =  case term of
-    Derivative _ _ _ ->  
-        let direction = denom term
-        in if dimetype == direcDimenType direction then integSurface ( cellposition |> function term) cellposition direction
-            else distributeMultiply [term] $ volumeOrInterval dimetype cellposition   
+    Derivative direction func _ ->  
+        if dimetype == direcDimenType direction then integSurface ( cellposition |> func) cellposition direction
+                else distributeMultiply [term] $ volumeOrInterval dimetype cellposition   
     _ -> distributeMultiply [term] $ volumeOrInterval dimetype cellposition 
 
 integ::  DimensionType -> [Term Double] ->Position -> [Term Double]
@@ -219,49 +215,55 @@ drhodw_dt =  undefined -- Derivative Time (\x-> \s -> prop Density x s*prop W x 
 -- the only thing returned is the new value for the density at this position 
 continuity:: Equation (Position-> [Term Double])
 continuity = Equation
-    [ integ Temporal [drho_dt]  >*> integ Spatial, 
+    [integ Temporal [drho_dt]  >*> integ Spatial, 
      integ  Spatial [drhodu_dt] >*> integ Temporal, 
      integ Spatial [drhodv_dt] >*> integ Temporal, 
      integ  Spatial [drhodw_dt]>*> integ Temporal ] 
     [\_ -> [Constant 0]]
     
-applyContinuity:: State (ValSet a) () 
-applyContinuity = state $ \prev -> ((),prev)
+uMomentum:: Equation (Position-> [Term Double])
+uMomentum = undefined
 
-applyUMomentum:: State (ValSet a) () 
-applyUMomentum = state $ \prev -> ((),prev)
+vMomentum:: Equation (Position-> [Term Double])
+vMomentum = undefined    
 
-applyVMomentum::State (ValSet a) () 
-applyVMomentum  = state $ \prev -> ((),prev)
+wMomentum:: Equation (Position-> [Term Double])
+wMomentum = undefined    
 
-applyWMomentum::  State (ValSet a) () 
-applyWMomentum = state $ \prev -> ((),prev)
+energy:: Equation (Position-> [Term Double])
+energy = undefined    
 
-applyEnergy:: State (ValSet a) () 
-applyEnergy   = state $ \prev -> ((),prev)
-
-applyGasLaw:: State (ValSet a) () 
-applyGasLaw = state $ \prev -> ((),prev)
-
-runTimeSteps:: (Num a) => State (ValSet a) [()]
+gasLaw:: Equation (Position-> [Term Double])
+gasLaw= undefined        
+    
+applyDiffEq :: ValSet a -> Equation (Position -> [Term a]) -> ValSet a    
+applyDiffEq (ValSet p v av sl) eq =
+    let newVals = foldr
+            (\pos -> \dict -> v) 
+            v p 
+    in ValSet p newVals av sl
+    
+updateDomain:: Equation (Position -> [Term a]) -> State (ValSet a) ()
+updateDomain equation = state $ \prev -> ((),applyDiffEq prev equation)       
+  
+runTimeSteps:: State (ValSet Double) [()]
 runTimeSteps =  mapM 
-        (\_ ->  applyContinuity
-            >>= \_ -> applyUMomentum
-            >>= \_ -> applyVMomentum
-            >>= \_ -> applyWMomentum
-            >>= \_ -> applyEnergy
-            >>= \_ -> applyGasLaw ) 
+        (\_ ->  updateDomain continuity
+            >>= \_ -> updateDomain uMomentum
+            >>= \_ -> updateDomain vMomentum
+            >>= \_ -> updateDomain wMomentum
+            >>= \_ -> updateDomain energy
+            >>= \_ -> updateDomain gasLaw ) 
         [1..10] 
     
-
 testTerms = [Unknown 2.4, Constant 1.2, Constant 3.112, Unknown (-0.21),  SubExpression (Expression [Constant 2, Constant 2, SubExpression (Expression [Unknown 0.33333])])]
 
 writeTerms:: (Num a, Show a)=> [Term a] -> String
 writeTerms terms =
     let writeTerm t prev = prev ++ case t of
-            Unknown _ -> show (coeff t) ++ "X + "
-            Constant _ -> show (val t) ++ " + "
-            SubExpression _ -> writeTerms (getSubExpression t) ++ " + "
+            Unknown u -> show u ++ "X + "
+            Constant c -> show c ++ " + "
+            SubExpression s -> writeTerms (getTerms s) ++ " + "
     in foldr writeTerm " " (terms |> reverse)  
 
 main:: IO()
