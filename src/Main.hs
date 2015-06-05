@@ -201,22 +201,17 @@ drhodv_dt d =  Derivative Time (\x-> \s -> prop d Density x s*prop d V x s) Cent
 drhodw_dt:: (Num a)=> ValSet a->Term a
 drhodw_dt d =  Derivative Time (\x-> \s -> prop d Density x s*prop d W x s) Center  
 
-(>*>):: (c->a)->(a->c->a)->c->a
-(>*>) prev next = \input -> next (prev input) input  
-     
 -- the only thing returned is the new value for the density at this position 
 continuity:: Reader (ValSet Double) (Equation (Position-> [Term Double]))
 continuity = asks
     (\env -> 
-        let integrate = integ env
-            chainIntegs inner outer = do
-                position <- ask 
-                return outer $ inner position
+        let integrate = integ env 
         in Equation
-            [integrate Temporal [drho_dt env]  >*> integrate Spatial, 
-             integrate Spatial [drhodu_dt env] >*> integrate Temporal, 
-             integrate Spatial [drhodv_dt env] >*> integrate Temporal, 
-             integrate Spatial [drhodw_dt env] >*> integrate Temporal ] 
+            [ integrate Temporal [drho_dt env] >>= integrate Spatial ,
+              integrate Temporal [drho_dt env] >>= integrate Spatial, 
+              integrate Spatial [drhodu_dt env] >>= integrate Temporal, 
+              integrate Spatial [drhodv_dt env] >>= integrate Temporal, 
+              integrate Spatial [drhodw_dt env] >>= integrate Temporal ] 
             [\_ -> [Constant 0]] )
     
 uMomentum:: Reader (ValSet Double) (Equation (Position-> [Term Double]))
