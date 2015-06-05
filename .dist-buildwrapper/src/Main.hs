@@ -145,7 +145,11 @@ testEquation =
 (|>) x y = y x
 
 sideArea vs s position =  areaVal vs |> Map.lookup position >>= Map.lookup s 
+
 sideLength vs d position = sideLen vs |> Map.lookup position >>= Map.lookup d
+
+prop:: ValSet a ->Property->Position->Side->a
+prop state property position side = undefined   
 
 initialGrid::(Num a) => ValSet a
 initialGrid= undefined
@@ -160,9 +164,6 @@ distributeMultiply terms m =
                 let modf x s =  func x s * m
                 in [Derivative direc modf side]
     in concatMap mult terms    
-
-prop:: ValSet a ->Property->Position->Side->a
-prop state property position side = undefined   
 
 integSurface:: (Num a)=> ValSet a -> (Side->a) -> Position -> Direction -> [Term a]
 integSurface vs f position direction =
@@ -204,12 +205,14 @@ drhodw_dt d =  Derivative Time (\x-> \s -> prop d Density x s*prop d W x s) Cent
      
 -- the only thing returned is the new value for the density at this position 
 continuity:: ValSet Double -> Equation (Position-> [Term Double])
-continuity d = Equation
-    [integ d Temporal [drho_dt d]  >*> integ d Spatial, 
-     integ d Spatial [drhodu_dt d] >*> integ d Temporal, 
-     integ d Spatial [drhodv_dt d] >*> integ d Temporal, 
-     integ d Spatial [drhodw_dt d] >*> integ d Temporal ] 
-    [\_ -> [Constant 0]]
+continuity d = 
+    let integrate = integ d
+    in Equation
+        [integrate Temporal [drho_dt d]  >*> integrate Spatial, 
+         integrate Spatial [drhodu_dt d] >*> integrate Temporal, 
+         integrate Spatial [drhodv_dt d] >*> integrate Temporal, 
+         integrate Spatial [drhodw_dt d] >*> integrate Temporal ] 
+        [\_ -> [Constant 0]]
     
 uMomentum:: ValSet Double ->Equation (Position-> [Term Double])
 uMomentum = undefined
