@@ -79,10 +79,12 @@ directionFromCenter side = case side of
     Now -> Time
     Prev -> Time
 
-volumeOrInterval:: ValSet Double -> DimensionType -> Position -> Double
-volumeOrInterval vs dimetype position = case dimetype of
-    Temporal -> timeStep
-    Spatial -> enumFrom X |> foldr (\d -> \p -> p * sideLength vs d position |> fromJust ) 1
+volumeOrInterval:: DimensionType -> Position -> Reader (ValSet Double) Double
+volumeOrInterval dimetype position = do 
+    vs <- ask
+    return $ case dimetype of
+        Temporal -> timeStep
+        Spatial -> enumFrom X |> foldr (\d -> \p -> p * runReader (sideLength d position) vs ) 1
 
 addTerm:: [Term a]->Term a->[Term a]
 addTerm terms term = terms ++ [term]
@@ -96,8 +98,10 @@ addTerms terms1 terms2 = case terms2 of
 approximateDerivative::(Num a, Fractional a)=> ValSet a -> Term a -> Position-> [Term a]
 approximateDerivative vs deriv position= case deriv of 
     (Derivative direction func side) ->
-        let neighbor = offsetPosition position side 
-            interval = average [ sideLength vs direction position |> fromJust, sideLength vs direction neighbor |> fromJust]
+        let neighbor = offsetPosition position side
+            sl =  runReader (sideLength direction position)
+            sln = runReader (sideLength direction neighbor)
+            interval = average [sl vs, sln vs]
             thisVal = func position Center
             neighborVal = func neighbor Center
             f first = if isUpperSide side && first then neighborVal else thisVal
@@ -111,7 +115,7 @@ approximateDerivative vs deriv position= case deriv of
                     neighborProxyNeighborB = proxyNeighbor neighbor snd 
                 in distributeMultiply [ Constant (average [thisProxyNeighborA,neighborProxyNeighborA])
                     , Constant ((-1)* average [thisProxyNeighborB,neighborProxyNeighborB]) ] 
-                    (1/sideLength vs direction position|> fromJust)    
+                    (1/ sl vs)    
     _ -> []
 
 offsetPosition:: Position->Side ->Position
@@ -172,53 +176,66 @@ distributeMultiply terms m =
                 in [Derivative direc modf side]
     in concatMap mult terms    
 
-integSurface:: (Num a)=> ValSet a -> (Side->a) -> Position -> Direction -> [Term a]
-integSurface vs f position direction =
-    let sides = boundaryPair direction 
-        value s isUpper =
-            let modf = if isUpper then f else (\x-> x * (-1)).f 
-            in (case (direcDimenType direction,isUpper) of
-                (Temporal,True) -> Unknown
-                _ -> Constant)
-                ( modf s*(sideArea vs s position |> fromJust))
-    in [value (fst sides) True , value (snd sides) False]       
+integSurface:: (Num a)=> (Side->a) -> Position -> Direction -> Reader (ValSet a) [Term a]
+integSurface f position direction = do
+    vs <- ask
+    return $ 
+        let sides = boundaryPair direction 
+            value s isUpper =
+                let modf = if isUpper then f else (\x-> x * (-1)).f 
+                in (case (direcDimenType direction,isUpper) of
+                    (Temporal,True) -> Unknown
+                    _ -> Constant)
+                    ( modf s*( runReader (sideArea s position) vs))
+        in [value (fst sides) True , value (snd sides) False]       
        
-integSingleTerm:: ValSet Double -> Term Double -> DimensionType -> Position ->[Term Double]
-integSingleTerm vs term dimetype cellposition =  case term of
-    Derivative direction func _ ->  
-        if dimetype == direcDimenType direction then integSurface vs ( func cellposition ) cellposition direction
-                else distributeMultiply [term] $ volumeOrInterval vs dimetype cellposition   
-    _ -> distributeMultiply [term] $ volumeOrInterval vs dimetype cellposition 
+integSingleTerm::  Term Double -> DimensionType -> Position -> Reader (ValSet Double) [Term Double]
+integSingleTerm term dimetype cellposition =  do
+    vs <- ask
+    return $ case term of
+        Derivative direction func _ ->  
+            if dimetype == direcDimenType direction 
+                then runReader (integSurface ( func cellposition ) cellposition direction) vs
+                else distributeMultiply [term] $ runReader (volumeOrInterval dimetype cellposition) vs 
+        _ -> distributeMultiply [term] $ runReader (volumeOrInterval dimetype cellposition) vs  
 
 integ::  ValSet Double -> DimensionType -> [Term Double] ->Position -> [Term Double]
 integ vs dimetype terms cellposition = case terms of
     [] -> []
-    (x:xs) -> integSingleTerm vs x dimetype cellposition ++ integ vs dimetype xs cellposition   
+    (x:xs) -> runReader (integSingleTerm x dimetype cellposition) vs ++ integ vs dimetype xs cellposition   
        
-drho_dt:: (Num a)=> ValSet a-> Term a       
-drho_dt d =  Derivative Time (prop d Density) Center
+drho_dt:: (Num a)=> Reader (ValSet a) (Term a)       
+drho_dt = do
+    d<-ask 
+    return $ Derivative Time (\x -> \s-> runReader (prop Density x s) d ) Center
 
-drhodu_dt:: (Num a)=> ValSet a->Term a
-drhodu_dt d =  Derivative Time (\x-> \s -> prop d Density x s* prop d U x s) Center
+drhodu_dt:: (Num a)=> Reader (ValSet a) (Term a)
+drhodu_dt =do
+    d<-ask 
+    return $ Derivative Time (\x-> \s -> runReader (prop Density x s) d * runReader (prop U x s) d) Center
 
-drhodv_dt:: (Num a)=> ValSet a->Term a 
-drhodv_dt d =  Derivative Time (\x-> \s -> prop d Density x s*prop d V x s) Center
+drhodv_dt:: (Num a)=> Reader (ValSet a) (Term a) 
+drhodv_dt = do
+    d<-ask   
+    return $ Derivative Time (\x-> \s -> runReader (prop Density x s) d* runReader (prop V x s) d) Center
 
-drhodw_dt:: (Num a)=> ValSet a->Term a
-drhodw_dt d =  Derivative Time (\x-> \s -> prop d Density x s*prop d W x s) Center  
+drhodw_dt:: (Num a)=> Reader (ValSet a) (Term a)
+drhodw_dt = do
+    d<-ask  
+    return $ Derivative Time (\x-> \s -> runReader (prop Density x s) d* runReader (prop W x s) d) Center  
 
 -- the only thing returned is the new value for the density at this position 
 continuity:: Reader (ValSet Double) (Equation (Position-> [Term Double]))
-continuity = asks
-    (\env -> 
-        let integrate = integ env 
+continuity = do
+    env <- ask
+    return $ let integrate = integ env 
         in Equation
-            [ integrate Temporal [drho_dt env] >>= integrate Spatial ,
-              integrate Temporal [drho_dt env] >>= integrate Spatial, 
-              integrate Spatial [drhodu_dt env] >>= integrate Temporal, 
-              integrate Spatial [drhodv_dt env] >>= integrate Temporal, 
-              integrate Spatial [drhodw_dt env] >>= integrate Temporal ] 
-            [\_ -> [Constant 0]] )
+            [ integrate Temporal [runReader drho_dt env] >>= integrate Spatial ,
+              integrate Temporal [runReader drho_dt env] >>= integrate Spatial, 
+              integrate Spatial [runReader drhodu_dt env] >>= integrate Temporal, 
+              integrate Spatial [runReader drhodv_dt env] >>= integrate Temporal, 
+              integrate Spatial [runReader drhodw_dt env] >>= integrate Temporal ] 
+            [\_ -> [Constant 0]] 
     
 uMomentum:: Reader (ValSet Double) (Equation (Position-> [Term Double]))
 uMomentum = undefined
