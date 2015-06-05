@@ -3,6 +3,7 @@ module Main where
 import qualified Data.Map as Map 
 import Data.Maybe
 import Control.Monad.State as State
+import Control.Monad.Reader as Reader
   
 data Side = East | West | North | South | Top | Bottom | Now | Prev | Center deriving (Show,Eq,Ord)
 data Direction = Time | X | Y | Z deriving (Enum,Ord,Eq)
@@ -204,29 +205,33 @@ drhodw_dt d =  Derivative Time (\x-> \s -> prop d Density x s*prop d W x s) Cent
 (>*>) prev next = \input -> next (prev input) input  
      
 -- the only thing returned is the new value for the density at this position 
-continuity:: ValSet Double -> Equation (Position-> [Term Double])
-continuity d = 
-    let integrate = integ d
-    in Equation
-        [integrate Temporal [drho_dt d]  >*> integrate Spatial, 
-         integrate Spatial [drhodu_dt d] >*> integrate Temporal, 
-         integrate Spatial [drhodv_dt d] >*> integrate Temporal, 
-         integrate Spatial [drhodw_dt d] >*> integrate Temporal ] 
-        [\_ -> [Constant 0]]
+continuity:: Reader (ValSet Double) (Equation (Position-> [Term Double]))
+continuity = asks
+    (\env -> 
+        let integrate = integ env
+            chainIntegs inner outer = do
+                position <- ask 
+                return outer $ inner position
+        in Equation
+            [integrate Temporal [drho_dt env]  >*> integrate Spatial, 
+             integrate Spatial [drhodu_dt env] >*> integrate Temporal, 
+             integrate Spatial [drhodv_dt env] >*> integrate Temporal, 
+             integrate Spatial [drhodw_dt env] >*> integrate Temporal ] 
+            [\_ -> [Constant 0]] )
     
-uMomentum:: ValSet Double ->Equation (Position-> [Term Double])
+uMomentum:: Reader (ValSet Double) (Equation (Position-> [Term Double]))
 uMomentum = undefined
 
-vMomentum:: ValSet Double ->Equation (Position-> [Term Double])
+vMomentum::Reader (ValSet Double) (Equation (Position-> [Term Double]))
 vMomentum = undefined    
 
-wMomentum:: ValSet Double ->Equation (Position-> [Term Double])
+wMomentum:: Reader (ValSet Double) (Equation (Position-> [Term Double]))
 wMomentum = undefined    
 
-energy::ValSet Double -> Equation (Position-> [Term Double])
+energy::Reader (ValSet Double) (Equation (Position-> [Term Double]))
 energy = undefined    
 
-gasLaw:: ValSet Double ->Equation (Position-> [Term Double])
+gasLaw:: Reader (ValSet Double) (Equation (Position-> [Term Double]))
 gasLaw= undefined        
     
 getUnknownPropertyType:: Equation a -> Property
@@ -246,12 +251,12 @@ applyDiffEq (ValSet p v av sl) (Equation l r ) =
             v p 
     in ValSet p newVals av sl
     
-updateDomain::(Fractional a)=> (ValSet a-> Equation (Position -> [Term a])) -> State (ValSet a) ()
-updateDomain equation = state $ \prev -> ((),applyDiffEq prev $ equation prev)       
+updateDomain::(Fractional a)=> Reader (ValSet a) (Equation (Position -> [Term a])) -> State (ValSet a) ()
+updateDomain equation = state $ \prev -> ((),applyDiffEq prev $ runReader equation prev)       
   
 runTimeSteps:: State (ValSet Double) [()]
 runTimeSteps =  mapM 
-        (\_ ->  updateDomain continuity
+        (\_ ->  updateDomain continuity  
             >>= \_ -> updateDomain uMomentum
             >>= \_ -> updateDomain vMomentum
             >>= \_ -> updateDomain wMomentum
