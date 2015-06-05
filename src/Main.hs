@@ -145,12 +145,18 @@ testEquation =
 (|>)::a->(a->b)->b
 (|>) x y = y x
 
-sideArea vs s position =  areaVal vs |> Map.lookup position >>= Map.lookup s 
+sideArea:: Side -> Position -> Reader (ValSet a) a
+sideArea s position = do
+    vs <- ask  
+    return $ fromJust $ areaVal vs |> Map.lookup position >>= Map.lookup s   
 
-sideLength vs d position = sideLen vs |> Map.lookup position >>= Map.lookup d
+sideLength:: Direction -> Position -> Reader (ValSet a) a
+sideLength d position = do
+    vs <- ask
+    return $ fromJust $ sideLen vs |> Map.lookup position >>= Map.lookup d
 
-prop:: ValSet a ->Property->Position->Side->a
-prop state property position side = undefined   
+prop:: Property->Position->Side-> Reader (ValSet a) a
+prop property position side = undefined   
 
 initialGrid::(Num a) => ValSet a
 initialGrid= undefined
@@ -232,14 +238,15 @@ gasLaw= undefined
 getUnknownPropertyType:: Equation a -> Property
 getUnknownPropertyType = undefined    
     
+getDiscEqInstance:: Equation (Position -> [Term a]) -> Position -> Equation (Term a)
+getDiscEqInstance (Equation l r) pos = Equation (concatMap (\t -> t pos) l) (concatMap (\t -> t pos) r)
+    
 applyDiffEq :: (Fractional a)=>ValSet a -> Equation (Position -> [Term a]) -> ValSet a    
-applyDiffEq (ValSet p v av sl) (Equation l r ) =
+applyDiffEq (ValSet p v av sl) eq =
     let newVals = foldr
             (\pos -> \dict -> 
                 let subDict = fromJust $ Map.lookup pos dict
-                    discEquation= Equation 
-                        (concatMap (\t -> t pos) l) 
-                        (concatMap (\t -> t pos) r)
+                    discEquation=getDiscEqInstance eq pos 
                     solvedProperty = getUnknownPropertyType discEquation
                     newValue = solveUnknown (ValSet p v av sl) discEquation pos  
                 in Map.insert pos (Map.insert solvedProperty newValue subDict)dict )  
@@ -273,5 +280,5 @@ main:: IO()
 main = 
     print ( solveUnknown initialGrid testEquation $ Position 0 0 0 0.0) 
     >>= \_ -> putStrLn $ writeTerms $ distributeMultiply testTerms 2
-
+    
 
