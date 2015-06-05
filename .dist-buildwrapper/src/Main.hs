@@ -27,6 +27,57 @@ data Expression a = Expression{getTerms::[Term a]}
 data Term a = Constant {val::a} | Unknown { coeff::a } | SubExpression {expression::Expression a} 
     | Derivative { denom::Direction ,function:: Position->Side->a, centered::Side }
 
+timeStep::Double
+timeStep = 0.0001 
+
+maxPos:: Direction -> Int
+maxPos d = case d of 
+    X -> 100000
+    Y -> 100000
+    Z -> 100000
+
+getPositionComponent (Position x y z _) d = case d of 
+    X -> x
+    Y -> y
+    Z -> z
+
+modifyPositionComponent (Position x y z t) direction amt= case direction of 
+    X -> Position (x+amt) y z t
+    Y -> Position x (y+amt) z t 
+    Z -> Position x y (z+amt) t
+    
+offsetPosition:: Position->Side ->Position
+offsetPosition (Position x y z t) side = case side of
+    Center -> Position x y z t 
+    Now -> Position x y z t 
+    Prev -> Position x y z (max 0 (t - timeStep))  
+    _ -> 
+        let maxOrMin = if isUpperSide side then min else max
+            offsetAmount = if isUpperSide side then 1 else (-1)
+            direction = directionFromCenter side
+            boundary = if isUpperSide side 
+                then maxPos direction 
+                else 0
+        in modifyPositionComponent (Position x y z t) direction offsetAmount   
+        
+    --East -> Position (min (maxPos X) (x+1)) y z t
+    --West -> Position (max 0 (x-1)) y z t
+    --Top -> Position x y (min(maxPos Z) (z+1)) t
+    --Bottom -> Position x y (max 0 (z-1)) t
+    --North -> Position x (min (maxPos Y) (y+1)) z t
+    --South -> Position x (max 0 (y-1)) z t
+
+prop::(Num a, Fractional a)=> Property->Position->Side-> Reader (ValSet a) a
+prop property position side = do
+    (ValSet _ v _ _) <- ask 
+    return $ 
+        let neighbor = offsetPosition position side
+            getVal p = fromJust $ Map.lookup p v >>= Map.lookup property  
+        in average [getVal position,getVal neighbor]
+
+initialGrid::(Num a) => ValSet a
+initialGrid= undefined
+         
 direcDimenType:: Direction -> DimensionType
 direcDimenType direc = case direc of
     Time -> Temporal
@@ -37,9 +88,6 @@ average terms =
     let len = length terms |> fromIntegral
         f n p = p + n / len
     in foldr f 0 terms
-
-timeStep::Double
-timeStep = 0.0001 
 
 isUpperSide:: Side -> Bool
 isUpperSide side = case side of
@@ -118,9 +166,6 @@ approximateDerivative vs deriv position= case deriv of
                     (1/ sl vs)    
     _ -> []
 
-offsetPosition:: Position->Side ->Position
-offsetPosition position side = undefined
-
 solveUnknown::(Fractional a)=> ValSet a->Equation (Term a)->Position->a
 solveUnknown vs (Equation l r) position= 
     let sumUnknown n p =  p + case n of
@@ -158,12 +203,6 @@ sideLength:: Direction -> Position -> Reader (ValSet a) a
 sideLength d position = do
     vs <- ask
     return $ fromJust $ sideLen vs |> Map.lookup position >>= Map.lookup d
-
-prop:: Property->Position->Side-> Reader (ValSet a) a
-prop property position side = undefined   
-
-initialGrid::(Num a) => ValSet a
-initialGrid= undefined
 
 distributeMultiply::(Num a)=> [Term a]->a->[Term a]
 distributeMultiply terms m =
@@ -203,23 +242,19 @@ integ::  ValSet Double -> DimensionType -> [Term Double] ->Position -> [Term Dou
 integ vs dimetype terms cellposition = case terms of
     [] -> []
     (x:xs) -> runReader (integSingleTerm x dimetype cellposition) vs ++ integ vs dimetype xs cellposition   
-       
-drho_dt:: (Num a)=> Reader (ValSet a) (Term a)       
+      
 drho_dt = do
     d<-ask 
     return $ Derivative Time (\x -> \s-> runReader (prop Density x s) d ) Center
 
-drhodu_dt:: (Num a)=> Reader (ValSet a) (Term a)
 drhodu_dt =do
     d<-ask 
     return $ Derivative Time (\x-> \s -> runReader (prop Density x s) d * runReader (prop U x s) d) Center
-
-drhodv_dt:: (Num a)=> Reader (ValSet a) (Term a) 
+ 
 drhodv_dt = do
     d<-ask   
     return $ Derivative Time (\x-> \s -> runReader (prop Density x s) d* runReader (prop V x s) d) Center
 
-drhodw_dt:: (Num a)=> Reader (ValSet a) (Term a)
 drhodw_dt = do
     d<-ask  
     return $ Derivative Time (\x-> \s -> runReader (prop Density x s) d* runReader (prop W x s) d) Center  
