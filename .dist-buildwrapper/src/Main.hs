@@ -11,7 +11,7 @@ data Equation a = Equation{
     rhs::[a]
     ,lhs::[a]}    
 data IntegralType = Body | Surface deriving (Eq)
-data Property = U | V | W | Density | Temperature
+data Property = U | V | W | Density | Temperature deriving (Ord,Eq)
 data Position = Position {
     xPos::Int
     ,yPos::Int
@@ -78,14 +78,10 @@ directionFromCenter side = case side of
     Now -> Time
     Prev -> Time
 
-volumeOrInterval:: DimensionType -> Position -> Double
-volumeOrInterval dimetype position = case dimetype of
+volumeOrInterval:: ValSet Double -> DimensionType -> Position -> Double
+volumeOrInterval vs dimetype position = case dimetype of
     Temporal -> timeStep
-    Spatial ->
-        let getSide f x = sideArea ((f.boundaryPair) x) position |> fromJust 
-        in enumFrom X
-            |> map (\x-> average [ getSide fst x , getSide snd x])
-            |> foldr (*) 1
+    Spatial -> enumFrom X |> foldr (\d -> \p -> p * sideLength vs d position |> fromJust ) 1
 
 addTerm:: [Term a]->Term a->[Term a]
 addTerm terms term = terms ++ [term]
@@ -96,11 +92,11 @@ addTerms terms1 terms2 = case terms2 of
     (x:xs) -> addTerms (addTerm terms1 x) xs
     _ -> terms1
 
-approximateDerivative::(Num a, Fractional a)=> Term a -> Position-> [Term a]
-approximateDerivative deriv position= case deriv of 
+approximateDerivative::(Num a, Fractional a)=> ValSet a -> Term a -> Position-> [Term a]
+approximateDerivative vs deriv position= case deriv of 
     (Derivative direction func side) ->
         let neighbor = offsetPosition position side 
-            interval = average [ sideLength direction position |> fromJust, sideLength direction neighbor |> fromJust]
+            interval = average [ sideLength vs direction position |> fromJust, sideLength vs direction neighbor |> fromJust]
             thisVal = func position Center
             neighborVal = func neighbor Center
             f first = if isUpperSide side && first then neighborVal else thisVal
@@ -114,21 +110,21 @@ approximateDerivative deriv position= case deriv of
                     neighborProxyNeighborB = proxyNeighbor neighbor snd 
                 in distributeMultiply [ Constant (average [thisProxyNeighborA,neighborProxyNeighborA])
                     , Constant ((-1)* average [thisProxyNeighborB,neighborProxyNeighborB]) ] 
-                    (1/sideLength direction position|> fromJust)    
+                    (1/sideLength vs direction position|> fromJust)    
     _ -> []
 
 offsetPosition:: Position->Side ->Position
 offsetPosition position side = undefined
 
-solveUnknown::(Fractional a)=> Equation (Term a)->Position->a
-solveUnknown (Equation l r) position= 
+solveUnknown::(Fractional a)=> ValSet a->Equation (Term a)->Position->a
+solveUnknown vs (Equation l r) position= 
     let sumUnknown n p =  p + case n of
             Unknown u-> u
             SubExpression s -> sumExpression sumUnknown $ getTerms s
             _ -> 0
         sumConstants n p =  p + case n of
             Constant c-> c
-            Derivative _ _ _-> sumExpression sumConstants $ approximateDerivative n position  
+            Derivative _ _ _-> sumExpression sumConstants $ approximateDerivative vs n position  
             SubExpression s -> sumExpression sumConstants $ getTerms s
             _ -> 0
         sumExpression s e = foldr s 0 e
@@ -148,11 +144,8 @@ testEquation =
 (|>)::a->(a->b)->b
 (|>) x y = y x
 
-sideArea s position =  areaVal grid |> Map.lookup position >>= Map.lookup s 
-sideLength d position = sideLen grid |> Map.lookup position >>= Map.lookup d
-
-grid::(Num a) => ValSet a
-grid= undefined
+sideArea vs s position =  areaVal vs |> Map.lookup position >>= Map.lookup s 
+sideLength vs d position = sideLen vs |> Map.lookup position >>= Map.lookup d
 
 initialGrid::(Num a) => ValSet a
 initialGrid= undefined
@@ -169,71 +162,68 @@ distributeMultiply terms m =
     in concatMap mult terms    
 
 prop:: ValSet a ->Property->Position->Side->a
-prop state property position side = evalState (propState property position side) state   
+prop state property position side = undefined   
 
-propState:: Property->Position->Side-> State (ValSet a) a
-propState property position side = undefined
-
-integSurface:: (Num a)=> (Side->a) -> Position -> Direction -> [Term a]
-integSurface f position direction =
+integSurface:: (Num a)=> ValSet a -> (Side->a) -> Position -> Direction -> [Term a]
+integSurface vs f position direction =
     let sides = boundaryPair direction 
         value s isUpper =
             let modf = if isUpper then f else (\x-> x * (-1)).f 
             in (case (direcDimenType direction,isUpper) of
                 (Temporal,True) -> Unknown
                 _ -> Constant)
-                ( modf s*(sideArea s position |> fromJust))
+                ( modf s*(sideArea vs s position |> fromJust))
     in [value (fst sides) True , value (snd sides) False]       
        
-integSingleTerm:: Term Double -> DimensionType -> Position ->[Term Double]
-integSingleTerm term dimetype cellposition =  case term of
+integSingleTerm:: ValSet Double -> Term Double -> DimensionType -> Position ->[Term Double]
+integSingleTerm vs term dimetype cellposition =  case term of
     Derivative direction func _ ->  
-        if dimetype == direcDimenType direction then integSurface ( cellposition |> func) cellposition direction
-                else distributeMultiply [term] $ volumeOrInterval dimetype cellposition   
-    _ -> distributeMultiply [term] $ volumeOrInterval dimetype cellposition 
+        if dimetype == direcDimenType direction then integSurface vs ( func cellposition ) cellposition direction
+                else distributeMultiply [term] $ volumeOrInterval vs dimetype cellposition   
+    _ -> distributeMultiply [term] $ volumeOrInterval vs dimetype cellposition 
 
-integ::  DimensionType -> [Term Double] ->Position -> [Term Double]
-integ dimetype terms cellposition = case terms of
+integ::  ValSet Double -> DimensionType -> [Term Double] ->Position -> [Term Double]
+integ vs dimetype terms cellposition = case terms of
     [] -> []
-    (x:xs) -> integSingleTerm x dimetype cellposition ++ integ dimetype xs cellposition   
+    (x:xs) -> integSingleTerm vs x dimetype cellposition ++ integ vs dimetype xs cellposition   
        
-drho_dt:: (Num a)=> Term a       
-drho_dt =  undefined --Derivative Time (prop Density) Center
+drho_dt:: (Num a)=> ValSet a-> Term a       
+drho_dt d =  Derivative Time (prop d Density) Center
 
-drhodu_dt:: (Num a)=> Term a
-drhodu_dt =  undefined -- Derivative Time (\x-> \s -> prop Density x s* prop U x s) Center
+drhodu_dt:: (Num a)=> ValSet a->Term a
+drhodu_dt d =  Derivative Time (\x-> \s -> prop d Density x s* prop d U x s) Center
 
-drhodv_dt:: (Num a)=> Term a 
-drhodv_dt =  undefined -- Derivative Time (\x-> \s -> prop Density x s*prop V x s) Center
+drhodv_dt:: (Num a)=> ValSet a->Term a 
+drhodv_dt d =  Derivative Time (\x-> \s -> prop d Density x s*prop d V x s) Center
 
-drhodw_dt:: (Num a)=> Term a
-drhodw_dt =  undefined -- Derivative Time (\x-> \s -> prop Density x s*prop W x s) Center  
+drhodw_dt:: (Num a)=> ValSet a->Term a
+drhodw_dt d =  Derivative Time (\x-> \s -> prop d Density x s*prop d W x s) Center  
 
 (>*>):: (c->a)->(a->c->a)->c->a
 (>*>) prev next = \input -> next (prev input) input  
      
 -- the only thing returned is the new value for the density at this position 
-continuity:: Equation (Position-> [Term Double])
-continuity = Equation
-    [integ Temporal [drho_dt]  >*> integ Spatial, 
-     integ Spatial [drhodu_dt] >*> integ Temporal, 
-     integ Spatial [drhodv_dt] >*> integ Temporal, 
-     integ Spatial [drhodw_dt] >*> integ Temporal ] 
+continuity:: ValSet Double -> Equation (Position-> [Term Double])
+continuity d = Equation
+    [integ d Temporal [drho_dt d]  >*> integ d Spatial, 
+     integ d Spatial [drhodu_dt d] >*> integ d Temporal, 
+     integ d Spatial [drhodv_dt d] >*> integ d Temporal, 
+     integ d Spatial [drhodw_dt d] >*> integ d Temporal ] 
     [\_ -> [Constant 0]]
     
-uMomentum:: Equation (Position-> [Term Double])
+uMomentum:: ValSet Double ->Equation (Position-> [Term Double])
 uMomentum = undefined
 
-vMomentum:: Equation (Position-> [Term Double])
+vMomentum:: ValSet Double ->Equation (Position-> [Term Double])
 vMomentum = undefined    
 
-wMomentum:: Equation (Position-> [Term Double])
+wMomentum:: ValSet Double ->Equation (Position-> [Term Double])
 wMomentum = undefined    
 
-energy:: Equation (Position-> [Term Double])
+energy::ValSet Double -> Equation (Position-> [Term Double])
 energy = undefined    
 
-gasLaw:: Equation (Position-> [Term Double])
+gasLaw:: ValSet Double ->Equation (Position-> [Term Double])
 gasLaw= undefined        
     
 getUnknownPropertyType:: Equation a -> Property
@@ -247,15 +237,14 @@ applyDiffEq (ValSet p v av sl) (Equation l r ) =
                     discEquation= Equation 
                         (concatMap (\t -> t pos) l) 
                         (concatMap (\t -> t pos) r)
-                    property = getUnknownPropertyType discEquation
-                    newValue = solveUnknown discEquation pos  
-                in Map.insert pos (Map.insert property newValue subDict) dict
-            )  
+                    solvedProperty = getUnknownPropertyType discEquation
+                    newValue = solveUnknown (ValSet p v av sl) discEquation pos  
+                in Map.insert pos (Map.insert solvedProperty newValue subDict)dict )  
             v p 
     in ValSet p newVals av sl
     
-updateDomain::(Fractional a)=> Equation (Position -> [Term a]) -> State (ValSet a) ()
-updateDomain equation = state $ \prev -> ((),applyDiffEq prev equation)       
+updateDomain::(Fractional a)=> (ValSet a-> Equation (Position -> [Term a])) -> State (ValSet a) ()
+updateDomain equation = state $ \prev -> ((),applyDiffEq prev $ equation prev)       
   
 runTimeSteps:: State (ValSet Double) [()]
 runTimeSteps =  mapM 
@@ -279,7 +268,7 @@ writeTerms terms =
 
 main:: IO()
 main = 
-    print ( solveUnknown testEquation $ Position 0 0 0 0.0) 
+    print ( solveUnknown initialGrid testEquation $ Position 0 0 0 0.0) 
     >>= \_ -> putStrLn $ writeTerms $ distributeMultiply testTerms 2
 
 
