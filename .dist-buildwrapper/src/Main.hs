@@ -82,12 +82,12 @@ prop property position side = do
             getVal p = fromJust $ Map.lookup p v >>= Map.lookup property  
         in average [getVal position,getVal neighbor]
 
-initialGrid::(Num a) => ValSet a
+initialGrid::(Num a,Fractional a) => ValSet a
 initialGrid= 
     let p = makePositions
-        vMap = foldr (\next -> \prev -> Map.insert next 1 prev) Map.empty (enumFrom U)
-        avMap = foldr (\next -> \prev -> Map.insert next 1 prev) Map.empty (enumFrom East)
-        slMap = foldr (\next -> \prev -> Map.insert next 1 prev) Map.empty (enumFrom X)
+        vMap = foldr (\next -> \prev -> Map.insert next 1.8 prev) Map.empty (enumFrom U)
+        avMap = foldr (\next -> \prev -> Map.insert next 1.1 prev) Map.empty (enumFrom East)
+        slMap = foldr (\next -> \prev -> Map.insert next 1.12 prev) Map.empty (enumFrom X)
         v = foldr (\next -> \prev -> Map.insert next vMap prev) Map.empty makePositions
         av = foldr (\next -> \prev -> Map.insert next avMap prev) Map.empty makePositions
         sl = foldr (\next -> \prev -> Map.insert next slMap prev) Map.empty makePositions
@@ -280,9 +280,10 @@ integSurface f position direction = do
                 in case term of
                     Derivative _ subf _ -> 
                         SubExpression $ Expression $ distributeMultiply [subf position s] sideAreaVal
-                    Constant c ->  nonDerivConstructor $ c * sideAreaVal
-                    Unknown u ->  nonDerivConstructor $ u * sideAreaVal
                     SubExpression (Expression expr) -> SubExpression $ Expression $ distributeMultiply expr sideAreaVal
+                    _-> if (direcDimenType direction,isUpper) == (Temporal,True) 
+                        then nonDerivConstructor $ sideAreaVal 
+                        else fmap (\x-> x * sideAreaVal) term
         in [value (fst sides) True , value (snd sides) False]       
        
 integSingleTerm::  Term Double -> DimensionType -> Position -> Reader (ValSet Double) [Term Double]
@@ -532,14 +533,15 @@ writeTerms terms =
     let (_:_:xs) = writeTermsOrig terms |> reverse
     in xs |> reverse
   
-testPosition =   Position 8 3 8 0.0
+testPosition =   Position 8 3 9 0.0
     
 main:: IO()
 main = 
-    putStrLn "continuity ------------ "
-    -- >>= (\_-> print ( solveUnknown initialGrid testEquation $ Position 0 0 0 0.0)) 
-    -- >>= (\_ -> putStrLn $ writeTerms $ distributeMultiply testTerms 2)
-    -- >>= (\_ -> putStrLn $ show $ runReader (prop U testPosition Center ) initialGrid)
+    putStrLn "starting ..... "
+    >>= (\_-> print ( solveUnknown initialGrid testEquation $ Position 0 0 0 0.0)) 
+    >>= (\_ -> putStrLn $ writeTerms $ distributeMultiply testTerms 2)
+    >>= (\_ -> putStrLn $ show $ runReader (prop U testPosition Center ) initialGrid)
+    >>= (\_ -> putStrLn " continuity ------------ ")
     >>= (\_ -> putStrLn $ writeTerms $ rhs $ testEq continuity)
     >>= (\_ -> putStrLn " = ")
     >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq continuity)
