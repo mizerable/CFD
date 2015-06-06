@@ -36,16 +36,21 @@ maxPos d = case d of
     X -> 12
     Y -> 12
     Z -> 12
+    Time -> undefined
 
+getPositionComponent:: Position -> Direction -> Int
 getPositionComponent (Position x y z _) d = case d of 
     X -> x
     Y -> y
     Z -> z
+    Time -> undefined
 
+modifyPositionComponent::Position -> Direction -> Int -> Position
 modifyPositionComponent (Position x y z t) direction amt= case direction of 
-    X -> Position (amt) y z t
-    Y -> Position x (amt) z t 
-    Z -> Position x y (amt) t
+    X -> Position amt y z t
+    Y -> Position x amt z t 
+    Z -> Position x y amt t
+    Time -> undefined -- idk what to do here, time is a double and it won't let me add
     
 offsetPosition:: Position->Side ->Position
 offsetPosition (Position x y z t) side = case side of
@@ -61,7 +66,7 @@ offsetPosition (Position x y z t) side = case side of
                 then maxPos direction 
                 else 0
         in modifyPositionComponent position direction 
-            $ maxOrMin boundary $ (getPositionComponent position direction) + offsetAmount   
+            $ maxOrMin boundary $ getPositionComponent position direction + offsetAmount   
         
 prop::(Num a, Fractional a)=> Property->Position->Side-> Reader (ValSet a) a
 prop property position side = do
@@ -87,7 +92,7 @@ cartProd xs ys = [ x ++ y | x <- xs, y <- ys]
 
 makePositions::[Position]
 makePositions = 
-    let ranges = (enumFrom X) |> map maxPos |> map (\x -> [1..x] |> map (\y -> [y]))
+    let ranges = enumFrom X |> map maxPos |> map (\x -> [1..x] |> map (\y -> [y]))
         posCoords = foldr (\next -> \prev -> cartProd next prev) [[]] ranges
     in map (\coords -> Position (coords!!0) (coords!!1) (coords!!2) 0.0) posCoords
          
@@ -139,6 +144,7 @@ directionFromCenter side = case side of
     Bottom -> Z
     Now -> Time
     Prev -> Time
+    Center -> undefined 
 
 volumeOrInterval:: DimensionType -> Position -> Reader (ValSet Double) Double
 volumeOrInterval dimetype position = do 
@@ -201,7 +207,7 @@ approximateDerivative vs deriv position= case deriv of
     _ -> []
 
 solveUnknown::(Fractional a)=> ValSet a->Equation (Term a)->Position->a
-solveUnknown vs (Equation l r unknownProperty) position= 
+solveUnknown vs (Equation l r _) position= 
     let sumUnknown n p =  p + case n of
             Unknown u-> u
             SubExpression s -> sumExpression sumUnknown $ getTerms s
@@ -240,10 +246,9 @@ sideLength d position = do
     return $ fromJust $ sideLen vs |> Map.lookup position >>= Map.lookup d
 
 distributeMultiply::(Num a)=> [Term a]->a->[Term a]
-distributeMultiply terms m =
-    let 
-    in concatMap (multTerm m) terms
+distributeMultiply terms m = concatMap (multTerm m) terms
         
+multTerm:: (Num a)=> a -> Term a -> [Term a]
 multTerm m term  = case term of
     Constant c -> [Constant (c * m)]
     Unknown u -> [Unknown (u * m)]
@@ -259,9 +264,8 @@ integSurface f position direction = do
         let sides = boundaryPair direction 
             value s isUpper =
                 let modf = if isUpper then f 
-                        else (\x ->
-                            let [res] = multTerm (-1) x
-                            in res  ).f 
+                        else (\x -> let [res] = multTerm (-1) x
+                                in res  ).f 
                     term = modf s
                     sideAreaVal = runReader (sideArea s position) vs
                     nonDerivConstructor = case (direcDimenType direction,isUpper) of
@@ -272,6 +276,7 @@ integSurface f position direction = do
                         SubExpression $ Expression $ distributeMultiply [subf position s] sideAreaVal
                     Constant c ->  nonDerivConstructor $ c * sideAreaVal
                     Unknown u ->  nonDerivConstructor $ u * sideAreaVal
+                    SubExpression (Expression expr) -> SubExpression $ Expression $ distributeMultiply expr sideAreaVal
         in [value (fst sides) True , value (snd sides) False]       
        
 integSingleTerm::  Term Double -> DimensionType -> Position -> Reader (ValSet Double) [Term Double]
@@ -392,11 +397,11 @@ writeTermsOrig terms =
             Unknown u -> show u ++ "X + "
             Constant c -> show c ++ " + "
             SubExpression s -> writeTerms (getTerms s) ++ " + "
-            Derivative d f side -> "derivative( " ++(show d) ++ " " ++(show  side)++" )"
+            Derivative d _ side -> "derivative( " ++ show d ++ " " ++ show  side ++" )"
     in foldr writeTerm " " (terms |> reverse)  
 
 writeTerms terms =
-    let (x:y:xs) = writeTermsOrig terms |> reverse
+    let (_:_:xs) = writeTermsOrig terms |> reverse
     in xs |> reverse
   
 testPosition =   Position 8 3 8 0.0
