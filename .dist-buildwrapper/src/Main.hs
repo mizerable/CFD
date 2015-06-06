@@ -310,20 +310,64 @@ d_ properties direction =do
             foldr (\next -> \prev -> fmap ((*) ( runReader (prop next x s) d )) prev ) (Constant 1) properties ) 
         Center       
       
+dd_ :: Reader (ValSet a) (Term a) -> Direction -> Reader (ValSet a) (Term a)
+dd_ inner direction = do
+    d<- ask
+    return $ Derivative direction (\x-> \s -> runReader inner d) Center
+
+ddf_ ::(Num a,Fractional a)=> Reader (ValSet a) (Term a) -> a-> Direction -> Reader (ValSet a) (Term a)
+ddf_ inner factor direction = do
+    d<- ask
+    return $ Derivative direction (\x-> \s -> runReader inner d |> multTerm (2/3) |> head ) Center
+        
 drho_dt = d_ [Density] Time
+du_dx = d_ [U] X
+dv_dx = d_ [V] X
+dw_dx = d_ [W] X
+
+du_dy = d_ [U] Y
+du_dz = d_ [U] Z
+
+dv_dy = d_ [V] Y
+dw_dz = d_ [W] Z
 
 dp_dx = d_ [Pressure] X
 dp_dy = d_ [Pressure] Y
 dp_dz = d_ [Pressure] Z
 
-drhodu_dt =d_ [Density, U] Time   
-drhodu_dx =d_ [Density, U] X
-drhodv_dy = d_ [Density, V] Y
-drhodw_dz = d_ [Density, W] Z   
+drhou_dt =d_ [Density, U] Time   
+drhou_dx =d_ [Density, U] X
+drhov_dy = d_ [Density, V] Y
+drhow_dz = d_ [Density, W] Z   
 
 drhouu_dx = d_ [Density,U,U] X
-drhouu_dy = d_ [Density,U,V] Y
-drhouu_dz = d_ [Density,U,W] Z 
+drhouu_dy = d_ [Density,U,U] Y
+drhouu_dz = d_ [Density,U,U] Z 
+ 
+drhouv_dy = d_ [Density,U,V] Y
+drhouw_dz = d_ [Density,U,W] Z
+
+dmewu_dx = d_ [Mew, U] X
+dmewu_dy = d_ [Mew, U] Y
+dmewu_dz = d_ [Mew, U] Z
+
+dmewv_dx = d_ [Mew, V] X
+dmeww_dx = d_ [Mew, W] X
+
+d_du_dx_dx = dd_ du_dx X
+d_du_dy_dx = dd_ du_dy X
+d_du_dz_dx = dd_ du_dz X 
+
+d_dmewu_dx_dx = dd_ dmewu_dx X 
+d_dmewu_dy_dy = dd_ dmewu_dy Y 
+d_dmewu_dz_dz = dd_ dmewu_dz Z 
+
+d_dmewv_dx_dy = dd_ dmewv_dx Y
+d_dmeww_dx_dz = dd_ dmeww_dx Z
+
+d_23_du_dx_dx = ddf_ du_dx (2/3) X
+d_23_dv_dy_dx = ddf_ dv_dy (2/3) X
+d_23_dw_dz_dx = ddf_ dw_dz (2/3) X
  
 continuity:: Reader (ValSet Double) (Equation (Position-> [Term Double]))
 continuity = do
@@ -331,9 +375,9 @@ continuity = do
     return $ let integrate = integ env 
         in Equation
             [ integrate Temporal [runReader drho_dt env] >>= integrate Spatial , 
-              integrate Spatial [runReader drhodu_dx env] >>= integrate Temporal, 
-              integrate Spatial [runReader drhodv_dy env] >>= integrate Temporal, 
-              integrate Spatial [runReader drhodw_dz env] >>= integrate Temporal ] 
+              integrate Spatial [runReader drhou_dx env] >>= integrate Temporal, 
+              integrate Spatial [runReader drhov_dy env] >>= integrate Temporal, 
+              integrate Spatial [runReader drhow_dz env] >>= integrate Temporal ] 
             [\_ -> [Constant 0]] 
             Density
     
@@ -342,11 +386,20 @@ uMomentum = do
     env <- ask
     return $ let integrate = integ env 
         in Equation
-            [ integrate Temporal [runReader drho_dt env] >>= integrate Spatial , 
-              integrate Spatial [runReader drhodu_dx env] >>= integrate Temporal, 
-              integrate Spatial [runReader drhodv_dy env] >>= integrate Temporal, 
-              integrate Spatial [runReader drhodw_dz env] >>= integrate Temporal ] 
-            [\_ -> [Constant 0]] 
+            [ integrate Temporal [runReader drhou_dt env] >>= integrate Spatial , 
+                integrate Spatial [runReader drhouu_dx env] >>= integrate Temporal, 
+                integrate Spatial [runReader drhouv_dy env] >>= integrate Temporal, 
+                integrate Spatial [runReader drhouw_dz env] >>= integrate Temporal,
+                integrate Spatial [runReader dp_dx env] >>= integrate Temporal ] 
+            [ integrate Spatial [runReader d_dmewu_dx_dx env] >>= integrate Temporal,   --1
+                integrate Spatial [runReader d_dmewu_dy_dy env] >>= integrate Temporal,  --2
+                integrate Spatial [runReader d_dmewu_dz_dz env] >>= integrate Temporal,   --3
+                integrate Spatial [runReader d_dmewu_dx_dx env] >>= integrate Temporal,  --1
+                integrate Spatial [runReader d_dmewv_dx_dy env] >>= integrate Temporal,  --2
+                integrate Spatial [runReader d_dmeww_dx_dz env] >>= integrate Temporal,  --3
+                integrate Spatial [runReader d_23_du_dx_dx env] >>= integrate Temporal,--1
+                integrate Spatial [runReader d_23_dv_dy_dx env] >>= integrate Temporal,--2
+                integrate Spatial [runReader d_23_dw_dz_dx env] >>= integrate Temporal ]--3
             U
 
 vMomentum::Reader (ValSet Double) (Equation (Position-> [Term Double]))
@@ -391,8 +444,8 @@ runTimeSteps =  mapM
     
 testTerms = [Unknown 2.4, Constant 1.2, Constant 3.112, Unknown (-0.21),  SubExpression (Expression [Constant 2, Constant 2, SubExpression (Expression [Unknown 0.33333])])]
 
-testContEq:: Equation (Term Double)
-testContEq = getDiscEqInstance ( runReader continuity initialGrid) testPosition 
+testEq:: Reader (ValSet Double ) (Equation (Position ->[Term Double])) -> Equation (Term Double)
+testEq eq = getDiscEqInstance ( runReader eq initialGrid) testPosition 
 
 ezcontinuity:: Reader (ValSet Double) (Equation (Position-> [Term Double]))
 ezcontinuity = do
@@ -400,7 +453,7 @@ ezcontinuity = do
     return $ let integrate = integ env 
         in Equation
             [ integrate Temporal [runReader drho_dt env] >>= integrate Spatial,
-              integrate Spatial [runReader drhodu_dx env] >>= integrate Temporal] 
+              integrate Spatial [runReader drhou_dx env] >>= integrate Temporal] 
             [\_ -> [Constant 0]]
             Density 
             
@@ -421,14 +474,19 @@ testPosition =   Position 8 3 8 0.0
     
 main:: IO()
 main = 
-    putStrLn " here we go... "
+    putStrLn "continuity ------------ "
     -- >>= (\_-> print ( solveUnknown initialGrid testEquation $ Position 0 0 0 0.0)) 
     -- >>= (\_ -> putStrLn $ writeTerms $ distributeMultiply testTerms 2)
     -- >>= (\_ -> putStrLn $ show $ runReader (prop U testPosition Center ) initialGrid)
-    >>= (\_ -> putStrLn $ writeTerms $ rhs testContEq)
+    >>= (\_ -> putStrLn $ writeTerms $ rhs $ testEq continuity)
     >>= (\_ -> putStrLn " = ")
-    >>= (\_ -> putStrLn $ writeTerms $ lhs testContEq)
+    >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq continuity)
     >>= (\_ -> putStrLn " solving... ")
-    >>= (\_ -> putStrLn $ show $ solveUnknown initialGrid testContEq testPosition)
-    
+    >>= (\_ -> putStrLn $ show $ solveUnknown initialGrid (testEq continuity) testPosition)
+    >>= (\_ -> putStrLn " U Momentum------------ ")
+    >>= (\_ -> putStrLn $ writeTerms $ rhs $ testEq uMomentum)
+    >>= (\_ -> putStrLn " = ")
+    >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq uMomentum)
+    >>= (\_ -> putStrLn " solving... ")
+    >>= (\_ -> putStrLn $ show $ solveUnknown initialGrid (testEq uMomentum) testPosition)
 
