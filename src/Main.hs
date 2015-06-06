@@ -85,7 +85,14 @@ prop property position side = do
 initialGrid::(Num a,Fractional a) => ValSet a
 initialGrid= 
     let p = makePositions
-        vMap = foldr (\next -> \prev -> Map.insert next 1.8 prev) Map.empty (enumFrom U)
+        vMap = foldr (\next -> \prev -> Map.insert next 
+            (case next of 
+                U-> 1
+                V-> 0
+                W-> 0
+                _-> 1
+                ) 
+            prev) Map.empty (enumFrom U)
         avMap = foldr (\next -> \prev -> Map.insert next 1.1 prev) Map.empty (enumFrom East)
         slMap = foldr (\next -> \prev -> Map.insert next 1.12 prev) Map.empty (enumFrom X)
         v = foldr (\next -> \prev -> Map.insert next vMap prev) Map.empty makePositions
@@ -256,12 +263,11 @@ distributeMultiply terms m = concatMap (multTerm m) terms
         
 multTerm:: (Num a)=> a -> Term a -> [Term a]
 multTerm m term  = case term of
-    Constant c -> [Constant (c * m)]
-    Unknown u -> [Unknown (u * m)]
     SubExpression s -> distributeMultiply ( getTerms s  ) m
     Derivative direc func side-> 
         let modf x s =  SubExpression $ Expression $ multTerm m $ func x s
         in [Derivative direc modf side]
+    _-> [fmap (\x-> x*m) term]
                 
 integSurface:: (Num a)=> (Side->Term a) -> Position -> Direction -> Reader (ValSet a) [Term a]
 integSurface f position direction = do
@@ -274,15 +280,13 @@ integSurface f position direction = do
                                 in res  ).f 
                     term = modf s
                     sideAreaVal = runReader (sideArea s position) vs
-                    nonDerivConstructor = case (direcDimenType direction,isUpper) of
-                        (Temporal,True) -> Unknown
-                        _ -> Constant 
+                    isUnknown = (direcDimenType direction,isUpper) == (Temporal,True) 
                 in case term of
                     Derivative _ subf _ -> 
                         SubExpression $ Expression $ distributeMultiply [subf position s] sideAreaVal
                     SubExpression (Expression expr) -> SubExpression $ Expression $ distributeMultiply expr sideAreaVal
-                    _-> if (direcDimenType direction,isUpper) == (Temporal,True) 
-                        then nonDerivConstructor $ sideAreaVal 
+                    _-> if isUnknown 
+                        then Unknown $ sideAreaVal 
                         else fmap (\x-> x * sideAreaVal) term
         in [value (fst sides) True , value (snd sides) False]       
        
@@ -480,6 +484,9 @@ gasLaw= undefined
 getDiscEqInstance:: Equation (Position -> [Term a]) -> Position -> Equation (Term a)
 getDiscEqInstance (Equation l r up) pos = Equation (concatMap (\t -> t pos) l) (concatMap (\t -> t pos) r) up
     
+advancePositionTime :: Position -> Position
+advancePositionTime (Position x y z t ) = Position x y z (t+timeStep)    
+    
 applyDiffEq :: (Fractional a)=>ValSet a -> Equation (Position -> [Term a]) -> ValSet a    
 applyDiffEq (ValSet p v av sl) eq =
     let newVals = foldr
@@ -487,8 +494,9 @@ applyDiffEq (ValSet p v av sl) eq =
                 let subDict = fromJust $ Map.lookup pos dict
                     discEquation=getDiscEqInstance eq pos 
                     solvedProperty = unknownProperty discEquation
-                    newValue = solveUnknown (ValSet p v av sl) discEquation pos  
-                in Map.insert pos (Map.insert solvedProperty newValue subDict)dict )  
+                    newValue = solveUnknown (ValSet p v av sl) discEquation pos
+                    newPos = advancePositionTime pos  
+                in Map.insert newPos (Map.insert solvedProperty newValue subDict)dict )  
             v p 
     in ValSet p newVals av sl
     
