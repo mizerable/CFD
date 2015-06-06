@@ -13,7 +13,7 @@ data Equation a = Equation{
     ,rhs::[a]
     ,unknownProperty::Property}    
 data IntegralType = Body | Surface deriving (Eq)
-data Property = U | V | W | Density | Temperature | Mew deriving (Ord,Eq,Enum,Show)
+data Property = U | V | W | Density | Temperature | Mew | Pressure deriving (Ord,Eq,Enum,Show)
 data Position = Position {
     xPos::Int
     ,yPos::Int
@@ -28,6 +28,12 @@ data Expression a = Expression{getTerms::[Term a]}
 data Term a = Constant {val::a} | Unknown { coeff::a } | SubExpression {expression::Expression a} 
     | Derivative { denom::Direction ,function:: Position->Side->Term a, centered::Side }
 
+instance Functor Term  where
+    fmap f x = case x of
+         Constant c -> Constant $ f c
+         Unknown u -> Unknown $ f u
+         _ -> undefined    
+            
 timeStep::Double
 timeStep = 0.0001 
 
@@ -296,21 +302,28 @@ integ vs dimetype terms cellposition = case terms of
     [] -> []
     (x:xs) -> runReader (integSingleTerm x dimetype cellposition) vs ++ integ vs dimetype xs cellposition   
 
-dd_:: (Fractional a) =>Property->Property-> Direction -> Reader (ValSet a) (Term a)
-dd_ p1 p2 direction =do
+d_:: (Fractional a) => [Property]-> Direction -> Reader (ValSet a) (Term a)
+d_ properties direction =do
     d<-ask 
-    return $ Derivative direction (\x-> \s -> Constant $ runReader (prop p1 x s) d * runReader (prop p2 x s) d) Center
-
-d_:: (Fractional a) => Property-> Direction -> Reader (ValSet a) (Term a)
-d_ property direction =do
-    d<-ask 
-    return $ Derivative direction (\x-> \s -> Constant $ runReader (prop property x s) d) Center       
+    return $ Derivative direction 
+        (\x-> \s -> 
+            foldr (\next -> \prev -> fmap ((*) ( runReader (prop next x s) d )) prev ) (Constant 1) properties ) 
+        Center       
       
-drho_dt = d_ Density Time
-drhodu_dt =dd_ Density U Time   
-drhodu_dx =dd_ Density U X
-drhodv_dy = dd_ Density V Y
-drhodw_dz = dd_ Density W Z   
+drho_dt = d_ [Density] Time
+
+dp_dx = d_ [Pressure] X
+dp_dy = d_ [Pressure] Y
+dp_dz = d_ [Pressure] Z
+
+drhodu_dt =d_ [Density, U] Time   
+drhodu_dx =d_ [Density, U] X
+drhodv_dy = d_ [Density, V] Y
+drhodw_dz = d_ [Density, W] Z   
+
+drhouu_dx = d_ [Density,U,U] X
+drhouu_dy = d_ [Density,U,V] Y
+drhouu_dz = d_ [Density,U,W] Z 
  
 continuity:: Reader (ValSet Double) (Equation (Position-> [Term Double]))
 continuity = do
