@@ -10,14 +10,15 @@ data Direction = Time | X | Y | Z deriving (Enum,Ord,Eq,Show)
 data DimensionType = Temporal | Spatial deriving ( Eq)
 data Equation a = Equation{
     lhs::[a]
-    ,rhs::[a]}    
+    ,rhs::[a]
+    ,unknownProperty::Property}    
 data IntegralType = Body | Surface deriving (Eq)
-data Property = U | V | W | Density | Temperature deriving (Ord,Eq,Enum)
+data Property = U | V | W | Density | Temperature deriving (Ord,Eq,Enum,Show)
 data Position = Position {
     xPos::Int
     ,yPos::Int
     ,zPos::Int
-    ,timePos::Double } deriving (Eq, Ord)
+    ,timePos::Double } deriving (Eq, Ord, Show)
 data ValSet a = ValSet{
     positions:: [Position]
     ,vals:: Map.Map Position (Map.Map Property a)
@@ -32,9 +33,9 @@ timeStep = 0.0001
 
 maxPos:: Direction -> Int
 maxPos d = case d of 
-    X -> 100000
-    Y -> 100000
-    Z -> 100000
+    X -> 12
+    Y -> 12
+    Z -> 12
 
 getPositionComponent (Position x y z _) d = case d of 
     X -> x
@@ -86,8 +87,8 @@ cartProd xs ys = [ x ++ y | x <- xs, y <- ys]
 
 makePositions::[Position]
 makePositions = 
-    let ranges = (enumFrom X) |> map maxPos |> map (\x -> [1..x])
-        posCoords = foldr (\next -> \prev -> cartProd next prev) [[]] [ranges]
+    let ranges = (enumFrom X) |> map maxPos |> map (\x -> [1..x] |> map (\y -> [y]))
+        posCoords = foldr (\next -> \prev -> cartProd next prev) [[]] ranges
     in map (\coords -> Position (coords!!0) (coords!!1) (coords!!2) 0.0) posCoords
          
 direcDimenType:: Direction -> DimensionType
@@ -179,7 +180,7 @@ approximateDerivative vs deriv position= case deriv of
     _ -> []
 
 solveUnknown::(Fractional a)=> ValSet a->Equation (Term a)->Position->a
-solveUnknown vs (Equation l r) position= 
+solveUnknown vs (Equation l r unknownProperty) position= 
     let sumUnknown n p =  p + case n of
             Unknown u-> u
             SubExpression s -> sumExpression sumUnknown $ getTerms s
@@ -202,6 +203,7 @@ testEquation =
         --[Unknown 2, Constant 4, Constant (-0.232)]
         [Unknown 2, SubExpression (Expression [Constant 2, Constant 2, Unknown 0.025]), Constant (-0.232)] 
         ([Constant 2, Constant 3 ] |> addTerms [Unknown (-0.025),Unknown (-0.05)])
+        U
 
 (|>)::a->(a->b)->b
 (|>) x y = y x
@@ -237,18 +239,20 @@ integSurface f position direction = do
                 in (case (direcDimenType direction,isUpper) of
                     (Temporal,True) -> Unknown
                     _ -> Constant)
-                    ( modf s*( runReader (sideArea s position) vs))
+                    ( modf s*  runReader (sideArea s position) vs)
         in [value (fst sides) True , value (snd sides) False]       
        
 integSingleTerm::  Term Double -> DimensionType -> Position -> Reader (ValSet Double) [Term Double]
 integSingleTerm term dimetype cellposition =  do
     vs <- ask
-    return $ case term of
-        Derivative direction func _ ->  
-            if dimetype == direcDimenType direction 
-                then runReader (integSurface ( func cellposition ) cellposition direction) vs
-                else distributeMultiply [term] $ runReader (volumeOrInterval dimetype cellposition) vs 
-        _ -> distributeMultiply [term] $ runReader (volumeOrInterval dimetype cellposition) vs  
+    return $
+        let nonDerivativeAnswer = distributeMultiply [term] $ runReader (volumeOrInterval dimetype cellposition) vs 
+        in case term of     
+            Derivative direction func _ ->  
+                if dimetype == direcDimenType direction 
+                    then runReader (integSurface ( func cellposition ) cellposition direction) vs
+                    else nonDerivativeAnswer
+            _ -> nonDerivativeAnswer  
 
 integ::  ValSet Double -> DimensionType -> [Term Double] ->Position -> [Term Double]
 integ vs dimetype terms cellposition = case terms of
@@ -259,29 +263,29 @@ drho_dt = do
     d<-ask 
     return $ Derivative Time (\x -> \s-> runReader (prop Density x s) d ) Center
 
-drhodu_dt =do
+drhodu_dx =do
     d<-ask 
-    return $ Derivative Time (\x-> \s -> runReader (prop Density x s) d * runReader (prop U x s) d) Center
+    return $ Derivative X (\x-> \s -> runReader (prop Density x s) d * runReader (prop U x s) d) Center
  
-drhodv_dt = do
+drhodv_dy = do
     d<-ask   
-    return $ Derivative Time (\x-> \s -> runReader (prop Density x s) d* runReader (prop V x s) d) Center
+    return $ Derivative Y (\x-> \s -> runReader (prop Density x s) d* runReader (prop V x s) d) Center
 
-drhodw_dt = do
+drhodw_dz = do
     d<-ask  
-    return $ Derivative Time (\x-> \s -> runReader (prop Density x s) d* runReader (prop W x s) d) Center  
+    return $ Derivative Z (\x-> \s -> runReader (prop Density x s) d* runReader (prop W x s) d) Center  
  
 continuity:: Reader (ValSet Double) (Equation (Position-> [Term Double]))
 continuity = do
     env <- ask
     return $ let integrate = integ env 
         in Equation
-            [ integrate Temporal [runReader drho_dt env] >>= integrate Spatial ,
-              integrate Temporal [runReader drho_dt env] >>= integrate Spatial, 
-              integrate Spatial [runReader drhodu_dt env] >>= integrate Temporal, 
-              integrate Spatial [runReader drhodv_dt env] >>= integrate Temporal, 
-              integrate Spatial [runReader drhodw_dt env] >>= integrate Temporal ] 
+            [ integrate Temporal [runReader drho_dt env] >>= integrate Spatial , 
+              integrate Spatial [runReader drhodu_dx env] >>= integrate Temporal, 
+              integrate Spatial [runReader drhodv_dy env] >>= integrate Temporal, 
+              integrate Spatial [runReader drhodw_dz env] >>= integrate Temporal ] 
             [\_ -> [Constant 0]] 
+            Density
     
 uMomentum:: Reader (ValSet Double) (Equation (Position-> [Term Double]))
 uMomentum = undefined
@@ -298,11 +302,8 @@ energy = undefined
 gasLaw:: Reader (ValSet Double) (Equation (Position-> [Term Double]))
 gasLaw= undefined        
     
-getUnknownPropertyType:: Equation a -> Property
-getUnknownPropertyType = undefined    
-    
 getDiscEqInstance:: Equation (Position -> [Term a]) -> Position -> Equation (Term a)
-getDiscEqInstance (Equation l r) pos = Equation (concatMap (\t -> t pos) l) (concatMap (\t -> t pos) r)
+getDiscEqInstance (Equation l r up) pos = Equation (concatMap (\t -> t pos) l) (concatMap (\t -> t pos) r) up
     
 applyDiffEq :: (Fractional a)=>ValSet a -> Equation (Position -> [Term a]) -> ValSet a    
 applyDiffEq (ValSet p v av sl) eq =
@@ -310,7 +311,7 @@ applyDiffEq (ValSet p v av sl) eq =
             (\pos -> \dict -> 
                 let subDict = fromJust $ Map.lookup pos dict
                     discEquation=getDiscEqInstance eq pos 
-                    solvedProperty = getUnknownPropertyType discEquation
+                    solvedProperty = unknownProperty discEquation
                     newValue = solveUnknown (ValSet p v av sl) discEquation pos  
                 in Map.insert pos (Map.insert solvedProperty newValue subDict)dict )  
             v p 
@@ -332,18 +333,20 @@ runTimeSteps =  mapM
 testTerms = [Unknown 2.4, Constant 1.2, Constant 3.112, Unknown (-0.21),  SubExpression (Expression [Constant 2, Constant 2, SubExpression (Expression [Unknown 0.33333])])]
 
 testContEq:: Equation (Term Double)
-testContEq = getDiscEqInstance ( runReader ezcontinuity initialGrid) $ Position 8 8 8 0.0 
+testContEq = getDiscEqInstance ( runReader continuity initialGrid) testPosition 
 
 ezcontinuity:: Reader (ValSet Double) (Equation (Position-> [Term Double]))
 ezcontinuity = do
     env <- ask
     return $ let integrate = integ env 
         in Equation
-            [ \_->[runReader drho_dt env] ] 
-            [\_ -> [Constant 0]] 
+            [ integrate Temporal [runReader drho_dt env] >>= integrate Spatial,
+              integrate Spatial [runReader drhodu_dx env] >>= integrate Temporal] 
+            [\_ -> [Constant 0]]
+            Density 
             
-writeTerms:: (Num a, Show a)=> [Term a] -> String
-writeTerms terms =
+writeTermsOrig:: (Num a, Show a)=> [Term a] -> String
+writeTermsOrig terms =
     let writeTerm t prev = prev ++ case t of
             Unknown u -> show u ++ "X + "
             Constant c -> show c ++ " + "
@@ -351,12 +354,22 @@ writeTerms terms =
             Derivative d f side -> "derivative( " ++(show d) ++ " " ++(show  side)++" )"
     in foldr writeTerm " " (terms |> reverse)  
 
+writeTerms terms =
+    let (x:y:xs) = writeTermsOrig terms |> reverse
+    in xs |> reverse
+  
+testPosition =   Position 8 3 8 0.0
+    
 main:: IO()
 main = 
-    print ( solveUnknown initialGrid testEquation $ Position 0 0 0 0.0) 
-    >>= (\_ -> putStrLn $ writeTerms $ distributeMultiply testTerms 2)
+    putStrLn " here we go... "
+    -- >>= (\_-> print ( solveUnknown initialGrid testEquation $ Position 0 0 0 0.0)) 
+    -- >>= (\_ -> putStrLn $ writeTerms $ distributeMultiply testTerms 2)
+    -- >>= (\_ -> putStrLn $ show $ runReader (prop U testPosition Center ) initialGrid)
     >>= (\_ -> putStrLn $ writeTerms $ rhs testContEq)
     >>= (\_ -> putStrLn " = ")
     >>= (\_ -> putStrLn $ writeTerms $ lhs testContEq)
+    >>= (\_ -> putStrLn " solving... ")
+    >>= (\_ -> putStrLn $ show $ solveUnknown initialGrid testContEq testPosition)
     
 
