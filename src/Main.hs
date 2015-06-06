@@ -13,7 +13,7 @@ data Equation a = Equation{
     ,rhs::[a]
     ,unknownProperty::Property}    
 data IntegralType = Body | Surface deriving (Eq)
-data Property = U | V | W | Density | Temperature deriving (Ord,Eq,Enum,Show)
+data Property = U | V | W | Density | Temperature | Mew deriving (Ord,Eq,Enum,Show)
 data Position = Position {
     xPos::Int
     ,yPos::Int
@@ -26,7 +26,7 @@ data ValSet a = ValSet{
     ,sideLen:: Map.Map Position (Map.Map Direction a) }
 data Expression a = Expression{getTerms::[Term a]} 
 data Term a = Constant {val::a} | Unknown { coeff::a } | SubExpression {expression::Expression a} 
-    | Derivative { denom::Direction ,function:: Position->Side->a, centered::Side }
+    | Derivative { denom::Direction ,function:: Position->Side->Term a, centered::Side }
 
 timeStep::Double
 timeStep = 0.0001 
@@ -165,18 +165,39 @@ approximateDerivative vs deriv position= case deriv of
             interval = average [sl vs, sln vs]
             thisVal = func position Center
             neighborVal = func neighbor Center
-            f first = if isUpperSide side && first then neighborVal else thisVal
+            neighborIsUpper = isUpperSide side  
+            f first = if neighborIsUpper && first then neighborVal else thisVal
         in if direction == directionFromCenter side 
-            then distributeMultiply [ Constant (f True) , Constant ( (-1)*f False) ] (1/interval)
+            then
+                let first = f True
+                    second = f False
+                in case (first, second) of
+                    (Constant c, Constant c1) -> 
+                        distributeMultiply [ first , Constant ( (-1)* c1) ] (1/interval)
+                    _ -> distributeMultiply 
+                            ( 
+                                approximateDerivative vs 
+                                    (if neighborIsUpper then neighborVal else thisVal) 
+                                    (if neighborIsUpper then neighbor else position)  
+                                ++ distributeMultiply
+                                    (approximateDerivative vs 
+                                        (if not neighborIsUpper then neighborVal else thisVal) 
+                                        (if not neighborIsUpper then neighbor else position))
+                                    (-1)
+                            ) 
+                            (1/interval)
             else 
                 let proxyNeighbor p t = func (offsetPosition p $ t $ boundaryPair direction) Center 
                     thisProxyNeighborA = proxyNeighbor position fst
                     thisProxyNeighborB = proxyNeighbor position snd
                     neighborProxyNeighborA = proxyNeighbor neighbor fst
                     neighborProxyNeighborB = proxyNeighbor neighbor snd 
-                in distributeMultiply [ Constant (average [thisProxyNeighborA,neighborProxyNeighborA])
-                    , Constant ((-1)* average [thisProxyNeighborB,neighborProxyNeighborB]) ] 
-                    (1/ sl vs)    
+                in case ( thisProxyNeighborA, thisProxyNeighborB,neighborProxyNeighborA,neighborProxyNeighborB) of
+                    (Constant thisA, Constant thisB, Constant nA, Constant nB) ->
+                        distributeMultiply [ Constant (average [thisA,nA])
+                            , Constant ((-1)* average [thisB,nB]) ] 
+                            (1/ sl vs)    
+                    _->undefined -- this is just too much work 
     _ -> []
 
 solveUnknown::(Fractional a)=> ValSet a->Equation (Term a)->Position->a
@@ -225,21 +246,28 @@ distributeMultiply terms m =
             Unknown u -> [Unknown (u * m)]
             SubExpression s -> distributeMultiply ( getTerms s  ) m
             Derivative direc func side-> 
-                let modf x s =  func x s * m
+                let modf x s =  SubExpression $ Expression $ mult $ func x s
                 in [Derivative direc modf side]
     in concatMap mult terms    
 
-integSurface:: (Num a)=> (Side->a) -> Position -> Direction -> Reader (ValSet a) [Term a]
+integSurface:: (Num a)=> (Side->Term a) -> Position -> Direction -> Reader (ValSet a) [Term a]
 integSurface f position direction = do
     vs <- ask
     return $ 
         let sides = boundaryPair direction 
             value s isUpper =
-                let modf = if isUpper then f else (\x-> x * (-1)).f 
-                in (case (direcDimenType direction,isUpper) of
-                    (Temporal,True) -> Unknown
-                    _ -> Constant)
-                    ( modf s*  runReader (sideArea s position) vs)
+                let -- modf = if isUpper then f else (\x-> x * (-1)).f
+                    modf = f 
+                    term = modf s
+                    sideAreaVal = runReader (sideArea s position) vs
+                    nonDerivConstructor = case (direcDimenType direction,isUpper) of
+                        (Temporal,True) -> Unknown
+                        _ -> Constant 
+                in case term of
+                    Derivative _ subf _ -> 
+                        SubExpression $ Expression $ distributeMultiply [subf position s] sideAreaVal
+                    Constant c ->  nonDerivConstructor $ c * sideAreaVal
+                    Unknown u ->  nonDerivConstructor $ u * sideAreaVal
         in [value (fst sides) True , value (snd sides) False]       
        
 integSingleTerm::  Term Double -> DimensionType -> Position -> Reader (ValSet Double) [Term Double]
@@ -258,22 +286,22 @@ integ::  ValSet Double -> DimensionType -> [Term Double] ->Position -> [Term Dou
 integ vs dimetype terms cellposition = case terms of
     [] -> []
     (x:xs) -> runReader (integSingleTerm x dimetype cellposition) vs ++ integ vs dimetype xs cellposition   
+
+dd_:: (Fractional a) =>Property->Property-> Direction -> Reader (ValSet a) (Term a)
+dd_ p1 p2 direction =do
+    d<-ask 
+    return $ Derivative direction (\x-> \s -> Constant $ runReader (prop p1 x s) d * runReader (prop p2 x s) d) Center
+
+d_:: (Fractional a) => Property-> Direction -> Reader (ValSet a) (Term a)
+d_ property direction =do
+    d<-ask 
+    return $ Derivative direction (\x-> \s -> Constant $ runReader (prop property x s) d) Center       
       
-drho_dt = do
-    d<-ask 
-    return $ Derivative Time (\x -> \s-> runReader (prop Density x s) d ) Center
-
-drhodu_dx =do
-    d<-ask 
-    return $ Derivative X (\x-> \s -> runReader (prop Density x s) d * runReader (prop U x s) d) Center
- 
-drhodv_dy = do
-    d<-ask   
-    return $ Derivative Y (\x-> \s -> runReader (prop Density x s) d* runReader (prop V x s) d) Center
-
-drhodw_dz = do
-    d<-ask  
-    return $ Derivative Z (\x-> \s -> runReader (prop Density x s) d* runReader (prop W x s) d) Center  
+drho_dt = d_ Density Time
+drhodu_dt =dd_ Density U Time   
+drhodu_dx =dd_ Density U X
+drhodv_dy = dd_ Density V Y
+drhodw_dz = dd_ Density W Z   
  
 continuity:: Reader (ValSet Double) (Equation (Position-> [Term Double]))
 continuity = do
@@ -288,7 +316,16 @@ continuity = do
             Density
     
 uMomentum:: Reader (ValSet Double) (Equation (Position-> [Term Double]))
-uMomentum = undefined
+uMomentum = do
+    env <- ask
+    return $ let integrate = integ env 
+        in Equation
+            [ integrate Temporal [runReader drho_dt env] >>= integrate Spatial , 
+              integrate Spatial [runReader drhodu_dx env] >>= integrate Temporal, 
+              integrate Spatial [runReader drhodv_dy env] >>= integrate Temporal, 
+              integrate Spatial [runReader drhodw_dz env] >>= integrate Temporal ] 
+            [\_ -> [Constant 0]] 
+            U
 
 vMomentum::Reader (ValSet Double) (Equation (Position-> [Term Double]))
 vMomentum = undefined    
