@@ -336,6 +336,9 @@ dp_dy = d_ [Pressure] Y
 dp_dz = d_ [Pressure] Z
 
 drhou_dt =d_ [Density, U] Time   
+drhov_dt =d_ [Density, V] Time
+drhow_dt =d_ [Density, W] Time
+
 drhou_dx =d_ [Density, U] X
 drhov_dy = d_ [Density, V] Y
 drhow_dz = d_ [Density, W] Z   
@@ -368,7 +371,30 @@ d_dmeww_dx_dz = dd_ dmeww_dx Z
 d_23_du_dx_dx = ddf_ du_dx (2/3) X
 d_23_dv_dy_dx = ddf_ dv_dy (2/3) X
 d_23_dw_dz_dx = ddf_ dw_dz (2/3) X
- 
+
+dmewv_dy = d_ [Mew,V] Y
+dmewv_dz = d_ [Mew,V] Z
+dmeww_dy = d_ [Mew,W] Y
+dmeww_dz = d_ [Mew,W] Z
+
+d_dmewv_dx_dx = dd_ dmewv_dx X
+d_dmewv_dy_dy = dd_ dmewv_dy Y
+d_dmewv_dz_dz = dd_ dmewv_dz Z
+d_dmewu_dy_dx = dd_ dmewu_dy X
+d_dmeww_dy_dz = dd_ dmeww_dy Z 
+d_23_du_dx_dy = ddf_ du_dx (2/3) Y
+d_23_dv_dy_dy = ddf_ dv_dy (2/3) Y
+d_23_dw_dz_dy = ddf_ dw_dz (2/3) Y
+                 
+d_dmeww_dx_dx = dd_ dmeww_dx X
+d_dmeww_dy_dy = dd_ dmeww_dy Y
+d_dmeww_dz_dz = dd_ dmeww_dz Z
+d_dmewu_dz_dx = dd_ dmewu_dz X
+d_dmewv_dz_dy = dd_ dmewv_dz Y
+d_23_du_dx_dz = ddf_ du_dx (2/3) Z
+d_23_dv_dy_dz = ddf_ dv_dy (2/3) Z
+d_23_dw_dz_dz = ddf_ dw_dz (2/3) Z              
+
 continuity:: Reader (ValSet Double) (Equation (Position-> [Term Double]))
 continuity = do
     env <- ask
@@ -403,10 +429,46 @@ uMomentum = do
             U
 
 vMomentum::Reader (ValSet Double) (Equation (Position-> [Term Double]))
-vMomentum = undefined    
+vMomentum = do
+    env <- ask
+    return $ let integrate = integ env 
+        in Equation
+            [ integrate Temporal [runReader drhov_dt env] >>= integrate Spatial , 
+                integrate Spatial [runReader drhouu_dx env] >>= integrate Temporal, 
+                integrate Spatial [runReader drhouv_dy env] >>= integrate Temporal, 
+                integrate Spatial [runReader drhouw_dz env] >>= integrate Temporal,
+                integrate Spatial [runReader dp_dy env] >>= integrate Temporal ] 
+            [ integrate Spatial [runReader d_dmewv_dx_dx env] >>= integrate Temporal,   --1
+                integrate Spatial [runReader d_dmewv_dy_dy env] >>= integrate Temporal,  --2
+                integrate Spatial [runReader d_dmewv_dz_dz env] >>= integrate Temporal,   --3
+                integrate Spatial [runReader d_dmewu_dy_dx env] >>= integrate Temporal,  --1
+                integrate Spatial [runReader d_dmewv_dy_dy env] >>= integrate Temporal,  --2
+                integrate Spatial [runReader d_dmeww_dy_dz env] >>= integrate Temporal,  --3
+                integrate Spatial [runReader d_23_du_dx_dy env] >>= integrate Temporal,--1
+                integrate Spatial [runReader d_23_dv_dy_dy env] >>= integrate Temporal,--2
+                integrate Spatial [runReader d_23_dw_dz_dy env] >>= integrate Temporal ]--3
+            V    
 
 wMomentum:: Reader (ValSet Double) (Equation (Position-> [Term Double]))
-wMomentum = undefined    
+wMomentum =  do
+    env <- ask
+    return $ let integrate = integ env 
+        in Equation
+            [ integrate Temporal [runReader drhow_dt env] >>= integrate Spatial , 
+                integrate Spatial [runReader drhouu_dx env] >>= integrate Temporal, 
+                integrate Spatial [runReader drhouv_dy env] >>= integrate Temporal, 
+                integrate Spatial [runReader drhouw_dz env] >>= integrate Temporal,
+                integrate Spatial [runReader dp_dz env] >>= integrate Temporal ] 
+            [ integrate Spatial [runReader d_dmeww_dx_dx env] >>= integrate Temporal,   --1
+                integrate Spatial [runReader d_dmeww_dy_dy env] >>= integrate Temporal,  --2
+                integrate Spatial [runReader d_dmeww_dz_dz env] >>= integrate Temporal,   --3
+                integrate Spatial [runReader d_dmewu_dz_dx env] >>= integrate Temporal,  --1
+                integrate Spatial [runReader d_dmewv_dz_dy env] >>= integrate Temporal,  --2
+                integrate Spatial [runReader d_dmeww_dz_dz env] >>= integrate Temporal,  --3
+                integrate Spatial [runReader d_23_du_dx_dz env] >>= integrate Temporal,--1
+                integrate Spatial [runReader d_23_dv_dy_dz env] >>= integrate Temporal,--2
+                integrate Spatial [runReader d_23_dw_dz_dz env] >>= integrate Temporal ]--3
+            W      
 
 energy::Reader (ValSet Double) (Equation (Position-> [Term Double]))
 energy = undefined    
@@ -489,4 +551,16 @@ main =
     >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq uMomentum)
     >>= (\_ -> putStrLn " solving... ")
     >>= (\_ -> putStrLn $ show $ solveUnknown initialGrid (testEq uMomentum) testPosition)
+    >>= (\_ -> putStrLn " V Momentum------------ ")
+    >>= (\_ -> putStrLn $ writeTerms $ rhs $ testEq vMomentum)
+    >>= (\_ -> putStrLn " = ")
+    >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq vMomentum)
+    >>= (\_ -> putStrLn " solving... ")
+    >>= (\_ -> putStrLn $ show $ solveUnknown initialGrid (testEq vMomentum) testPosition)
+    >>= (\_ -> putStrLn " W Momentum------------ ")
+    >>= (\_ -> putStrLn $ writeTerms $ rhs $ testEq wMomentum)
+    >>= (\_ -> putStrLn " = ")
+    >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq wMomentum)
+    >>= (\_ -> putStrLn " solving... ")
+    >>= (\_ -> putStrLn $ show $ solveUnknown initialGrid (testEq wMomentum) testPosition)
 
