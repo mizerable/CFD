@@ -172,7 +172,7 @@ approximateDerivative vs deriv position= case deriv of
                 let first = f True
                     second = f False
                 in case (first, second) of
-                    (Constant c, Constant c1) -> 
+                    (Constant _, Constant c1) -> 
                         distributeMultiply [ first , Constant ( (-1)* c1) ] (1/interval)
                     _ -> distributeMultiply 
                             ( 
@@ -241,23 +241,27 @@ sideLength d position = do
 
 distributeMultiply::(Num a)=> [Term a]->a->[Term a]
 distributeMultiply terms m =
-    let mult term = case term of
-            Constant c -> [Constant (c * m)]
-            Unknown u -> [Unknown (u * m)]
-            SubExpression s -> distributeMultiply ( getTerms s  ) m
-            Derivative direc func side-> 
-                let modf x s =  SubExpression $ Expression $ mult $ func x s
-                in [Derivative direc modf side]
-    in concatMap mult terms    
-
+    let 
+    in concatMap (multTerm m) terms
+        
+multTerm m term  = case term of
+    Constant c -> [Constant (c * m)]
+    Unknown u -> [Unknown (u * m)]
+    SubExpression s -> distributeMultiply ( getTerms s  ) m
+    Derivative direc func side-> 
+        let modf x s =  SubExpression $ Expression $ multTerm m $ func x s
+        in [Derivative direc modf side]
+                
 integSurface:: (Num a)=> (Side->Term a) -> Position -> Direction -> Reader (ValSet a) [Term a]
 integSurface f position direction = do
     vs <- ask
     return $ 
         let sides = boundaryPair direction 
             value s isUpper =
-                let -- modf = if isUpper then f else (\x-> x * (-1)).f
-                    modf = f 
+                let modf = if isUpper then f 
+                        else (\x ->
+                            let [res] = multTerm (-1) x
+                            in res  ).f 
                     term = modf s
                     sideAreaVal = runReader (sideArea s position) vs
                     nonDerivConstructor = case (direcDimenType direction,isUpper) of
