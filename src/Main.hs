@@ -5,14 +5,14 @@ import Data.Maybe
 import Control.Monad.State as State
 import Control.Monad.Reader as Reader
   
-data Side = East | West | North | South | Top | Bottom | Now | Prev | Center deriving (Show,Eq,Ord)
-data Direction = Time | X | Y | Z deriving (Enum,Ord,Eq)
+data Side = East | West | North | South | Top | Bottom | Now | Prev | Center deriving (Show,Eq,Ord, Enum)
+data Direction = Time | X | Y | Z deriving (Enum,Ord,Eq,Show)
 data DimensionType = Temporal | Spatial deriving ( Eq)
 data Equation a = Equation{
-    rhs::[a]
-    ,lhs::[a]}    
+    lhs::[a]
+    ,rhs::[a]}    
 data IntegralType = Body | Surface deriving (Eq)
-data Property = U | V | W | Density | Temperature deriving (Ord,Eq)
+data Property = U | V | W | Density | Temperature deriving (Ord,Eq,Enum)
 data Position = Position {
     xPos::Int
     ,yPos::Int
@@ -42,9 +42,9 @@ getPositionComponent (Position x y z _) d = case d of
     Z -> z
 
 modifyPositionComponent (Position x y z t) direction amt= case direction of 
-    X -> Position (x+amt) y z t
-    Y -> Position x (y+amt) z t 
-    Z -> Position x y (z+amt) t
+    X -> Position (amt) y z t
+    Y -> Position x (amt) z t 
+    Z -> Position x y (amt) t
     
 offsetPosition:: Position->Side ->Position
 offsetPosition (Position x y z t) side = case side of
@@ -52,21 +52,16 @@ offsetPosition (Position x y z t) side = case side of
     Now -> Position x y z t 
     Prev -> Position x y z (max 0 (t - timeStep))  
     _ -> 
-        let maxOrMin = if isUpperSide side then min else max
+        let position = Position x y z t
+            maxOrMin = if isUpperSide side then min else max
             offsetAmount = if isUpperSide side then 1 else (-1)
             direction = directionFromCenter side
             boundary = if isUpperSide side 
                 then maxPos direction 
                 else 0
-        in modifyPositionComponent (Position x y z t) direction offsetAmount   
+        in modifyPositionComponent position direction 
+            $ maxOrMin boundary $ (getPositionComponent position direction) + offsetAmount   
         
-    --East -> Position (min (maxPos X) (x+1)) y z t
-    --West -> Position (max 0 (x-1)) y z t
-    --Top -> Position x y (min(maxPos Z) (z+1)) t
-    --Bottom -> Position x y (max 0 (z-1)) t
-    --North -> Position x (min (maxPos Y) (y+1)) z t
-    --South -> Position x (max 0 (y-1)) z t
-
 prop::(Num a, Fractional a)=> Property->Position->Side-> Reader (ValSet a) a
 prop property position side = do
     (ValSet _ v _ _) <- ask 
@@ -76,7 +71,24 @@ prop property position side = do
         in average [getVal position,getVal neighbor]
 
 initialGrid::(Num a) => ValSet a
-initialGrid= undefined
+initialGrid= 
+    let p = makePositions
+        vMap = foldr (\next -> \prev -> Map.insert next 1 prev) Map.empty (enumFrom U)
+        avMap = foldr (\next -> \prev -> Map.insert next 1 prev) Map.empty (enumFrom East)
+        slMap = foldr (\next -> \prev -> Map.insert next 1 prev) Map.empty (enumFrom X)
+        v = foldr (\next -> \prev -> Map.insert next vMap prev) Map.empty makePositions
+        av = foldr (\next -> \prev -> Map.insert next avMap prev) Map.empty makePositions
+        sl = foldr (\next -> \prev -> Map.insert next slMap prev) Map.empty makePositions
+    in ValSet p v av sl
+    
+cartProd:: [[a]] -> [[a]] -> [[a]]
+cartProd xs ys = [ x ++ y | x <- xs, y <- ys]
+
+makePositions::[Position]
+makePositions = 
+    let ranges = (enumFrom X) |> map maxPos |> map (\x -> [1..x])
+        posCoords = foldr (\next -> \prev -> cartProd next prev) [[]] [ranges]
+    in map (\coords -> Position (coords!!0) (coords!!1) (coords!!2) 0.0) posCoords
          
 direcDimenType:: Direction -> DimensionType
 direcDimenType direc = case direc of
@@ -258,8 +270,7 @@ drhodv_dt = do
 drhodw_dt = do
     d<-ask  
     return $ Derivative Time (\x-> \s -> runReader (prop Density x s) d* runReader (prop W x s) d) Center  
-
--- the only thing returned is the new value for the density at this position 
+ 
 continuity:: Reader (ValSet Double) (Equation (Position-> [Term Double]))
 continuity = do
     env <- ask
@@ -320,17 +331,32 @@ runTimeSteps =  mapM
     
 testTerms = [Unknown 2.4, Constant 1.2, Constant 3.112, Unknown (-0.21),  SubExpression (Expression [Constant 2, Constant 2, SubExpression (Expression [Unknown 0.33333])])]
 
+testContEq:: Equation (Term Double)
+testContEq = getDiscEqInstance ( runReader ezcontinuity initialGrid) $ Position 8 8 8 0.0 
+
+ezcontinuity:: Reader (ValSet Double) (Equation (Position-> [Term Double]))
+ezcontinuity = do
+    env <- ask
+    return $ let integrate = integ env 
+        in Equation
+            [ \_->[runReader drho_dt env] ] 
+            [\_ -> [Constant 0]] 
+            
 writeTerms:: (Num a, Show a)=> [Term a] -> String
 writeTerms terms =
     let writeTerm t prev = prev ++ case t of
             Unknown u -> show u ++ "X + "
             Constant c -> show c ++ " + "
             SubExpression s -> writeTerms (getTerms s) ++ " + "
+            Derivative d f side -> "derivative( " ++(show d) ++ " " ++(show  side)++" )"
     in foldr writeTerm " " (terms |> reverse)  
 
 main:: IO()
 main = 
     print ( solveUnknown initialGrid testEquation $ Position 0 0 0 0.0) 
-    >>= \_ -> putStrLn $ writeTerms $ distributeMultiply testTerms 2
+    >>= (\_ -> putStrLn $ writeTerms $ distributeMultiply testTerms 2)
+    >>= (\_ -> putStrLn $ writeTerms $ rhs testContEq)
+    >>= (\_ -> putStrLn " = ")
+    >>= (\_ -> putStrLn $ writeTerms $ lhs testContEq)
     
 
