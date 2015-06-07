@@ -348,15 +348,6 @@ ddf_ inner factor direction = do
     return $ Derivative direction (\x-> \s -> runReader inner d |> multTerm factor |> head ) Center
         
 drho_dt = d_ [Density] Time
-du_dx = d_ [U] X
-dv_dx = d_ [V] X
-dw_dx = d_ [W] X
-
-du_dy = d_ [U] Y
-du_dz = d_ [U] Z
-
-dv_dy = d_ [V] Y
-dw_dz = d_ [W] Z
 
 dp_dx = d_ [Pressure] X
 dp_dy = d_ [Pressure] Y
@@ -368,17 +359,6 @@ drhow_dt =d_ [Density, W] Time
 
 drhoT_dt = df_ [Density, Temperature] specificHeatCv Time 
 
-drhou_dx =d_ [Density, U] X
-drhov_dy = d_ [Density, V] Y
-drhow_dz = d_ [Density, W] Z   
-
-drhouu_dx = d_ [Density,U,U] X
-drhouu_dy = d_ [Density,U,U] Y
-drhouu_dz = d_ [Density,U,U] Z 
- 
-drhouv_dy = d_ [Density,U,V] Y
-drhouw_dz = d_ [Density,U,W] Z
-
 dmewu_dx = d_ [Mew, U] X
 dmewu_dy = d_ [Mew, U] Y
 dmewu_dz = d_ [Mew, U] Z
@@ -386,43 +366,10 @@ dmewu_dz = d_ [Mew, U] Z
 dmewv_dx = d_ [Mew, V] X
 dmeww_dx = d_ [Mew, W] X
 
-d_du_dx_dx = dd_ du_dx X
-d_du_dy_dx = dd_ du_dy X
-d_du_dz_dx = dd_ du_dz X 
-
-d_dmewu_dx_dx = dd_ dmewu_dx X 
-d_dmewu_dy_dy = dd_ dmewu_dy Y 
-d_dmewu_dz_dz = dd_ dmewu_dz Z 
-
-d_dmewv_dx_dy = dd_ dmewv_dx Y
-d_dmeww_dx_dz = dd_ dmeww_dx Z
-
-d_23_dmewu_dx_dx = ddf_ dmewu_dx (2/3) X
-d_23_dmewv_dy_dx = ddf_ dmewv_dy (2/3) X
-d_23_dmeww_dz_dx = ddf_ dmeww_dz (2/3) X
-
 dmewv_dy = d_ [Mew,V] Y
 dmewv_dz = d_ [Mew,V] Z
 dmeww_dy = d_ [Mew,W] Y
 dmeww_dz = d_ [Mew,W] Z
-
-d_dmewv_dx_dx = dd_ dmewv_dx X
-d_dmewv_dy_dy = dd_ dmewv_dy Y
-d_dmewv_dz_dz = dd_ dmewv_dz Z
-d_dmewu_dy_dx = dd_ dmewu_dy X
-d_dmeww_dy_dz = dd_ dmeww_dy Z 
-d_23_dmewu_dx_dy = ddf_ dmewu_dx (2/3) Y
-d_23_dmewv_dy_dy = ddf_ dmewv_dy (2/3) Y
-d_23_dmeww_dz_dy = ddf_ dmeww_dz (2/3) Y
-                 
-d_dmeww_dx_dx = dd_ dmeww_dx X
-d_dmeww_dy_dy = dd_ dmeww_dy Y
-d_dmeww_dz_dz = dd_ dmeww_dz Z
-d_dmewu_dz_dx = dd_ dmewu_dz X
-d_dmewv_dz_dy = dd_ dmewv_dz Y
-d_23_dmewu_dx_dz = ddf_ dmewu_dx (2/3) Z
-d_23_dmewv_dy_dz = ddf_ dmewv_dy (2/3) Z
-d_23_dmeww_dz_dz = ddf_ dmeww_dz (2/3) Z              
 
 drhoTu_dx = df_ [Density,Temperature,U] specificHeatCv X
 drhoTv_dy = df_ [Density,Temperature,V] specificHeatCv Y
@@ -437,9 +384,15 @@ divergence vector =
     let zipped = zip vector (enumFrom X) 
     in zipped |> map (\pair -> dd_ (fst pair) (snd pair) )
     
-gradient:: (Num a, Fractional a) => Reader (ValSet a) (Term a) -> a-> [Reader (ValSet a) (Term a)]
-gradient function constantFactor = enumFrom X |> map (\d-> df_ [d2C d] constantFactor d) 
+gradient:: (Num a, Fractional a) => [Property] -> a-> [Reader (ValSet a) (Term a)]
+gradient properties constantFactor = enumFrom X |> map (\d-> df_ properties constantFactor d)
 
+integrateTerms integrate env =map (\term -> integrateOrder integrate Spatial Temporal [runReader term env] )  
+
+divergenceWithProps properties =  map (\x -> d_  (properties++[d2C x]) x ) (enumFrom X)  
+ 
+divGrad properties constantFactor = (divergence $ gradient properties constantFactor)  
+        
 integrateOrder integrate i1 i2 term = integrate i1 term >>= integrate i2
 
 continuity:: Reader (ValSet Double) (Equation (Position-> [Term Double]))
@@ -448,8 +401,8 @@ continuity = do
     return $ let integrate = integ env 
         in Equation
             ([ integrate Temporal [runReader drho_dt env] >>= integrate Spatial]
-             ++ map (\term -> integrateOrder integrate Spatial Temporal [runReader term env] )
-               (divergence $ map (\x -> d_ [Density,d2C x] x ) (enumFrom X) ) ) 
+                ++ (integrateTerms integrate env $ divergenceWithProps [Density])  
+            )
             [\_ -> [Constant 0]] 
             Density
     
@@ -458,84 +411,54 @@ uMomentum = do
     env <- ask
     return $ let integrate = integ env 
         in Equation
-            [ integrate Temporal [runReader drhou_dt env] >>= integrate Spatial , 
-                integrate Spatial [runReader drhouu_dx env] >>= integrate Temporal, 
-                integrate Spatial [runReader drhouv_dy env] >>= integrate Temporal, 
-                integrate Spatial [runReader drhouw_dz env] >>= integrate Temporal,
-                integrate Spatial [runReader dp_dx env] >>= integrate Temporal ] 
-            [ integrate Spatial [runReader d_dmewu_dx_dx env] >>= integrate Temporal,   --1
-                integrate Spatial [runReader d_dmewu_dy_dy env] >>= integrate Temporal,  --2
-                integrate Spatial [runReader d_dmewu_dz_dz env] >>= integrate Temporal,   --3
-                integrate Spatial [runReader d_dmewu_dx_dx env] >>= integrate Temporal,  --1
-                integrate Spatial [runReader d_dmewv_dx_dy env] >>= integrate Temporal,  --2
-                integrate Spatial [runReader d_dmeww_dx_dz env] >>= integrate Temporal,  --3
-                integrate Spatial [runReader d_23_dmewu_dx_dx env] >>= integrate Temporal,--1
-                integrate Spatial [runReader d_23_dmewv_dy_dx env] >>= integrate Temporal,--2
-                integrate Spatial [runReader d_23_dmeww_dz_dx env] >>= integrate Temporal ]--3
+            ([ integrate Temporal [runReader drhou_dt env] >>= integrate Spatial ]
+                ++ (integrateTerms integrate env $ divergenceWithProps [Density, U])
+                ++ [integrate Spatial [runReader dp_dx env] >>= integrate Temporal ]
+            ) 
+            ( concatMap (integrateTerms integrate env) 
+                [ divGrad [Mew,U] 1 
+                  ,divergence [ dmewu_dx, dmewv_dx, dmeww_dx ] 
+                  ,map (\d-> ddf_ d (2/3) X) (divergenceWithProps [Mew]) 
+                ]
+            )
             U
 
 vMomentum::Reader (ValSet Double) (Equation (Position-> [Term Double]))
 vMomentum = do
     env <- ask
-    return $ let integrate = integ env 
+    return $ let integrate = integ env
         in Equation
-            [ integrate Temporal [runReader drhov_dt env] >>= integrate Spatial , 
-                integrate Spatial [runReader drhouu_dx env] >>= integrate Temporal, 
-                integrate Spatial [runReader drhouv_dy env] >>= integrate Temporal, 
-                integrate Spatial [runReader drhouw_dz env] >>= integrate Temporal,
-                integrate Spatial [runReader dp_dy env] >>= integrate Temporal ] 
-            [ integrate Spatial [runReader d_dmewv_dx_dx env] >>= integrate Temporal,   --1
-                integrate Spatial [runReader d_dmewv_dy_dy env] >>= integrate Temporal,  --2
-                integrate Spatial [runReader d_dmewv_dz_dz env] >>= integrate Temporal,   --3
-                integrate Spatial [runReader d_dmewu_dy_dx env] >>= integrate Temporal,  --1
-                integrate Spatial [runReader d_dmewv_dy_dy env] >>= integrate Temporal,  --2
-                integrate Spatial [runReader d_dmeww_dy_dz env] >>= integrate Temporal,  --3
-                integrate Spatial [runReader d_23_dmewu_dx_dy env] >>= integrate Temporal,--1
-                integrate Spatial [runReader d_23_dmewv_dy_dy env] >>= integrate Temporal,--2
-                integrate Spatial [runReader d_23_dmeww_dz_dy env] >>= integrate Temporal ]--3
-            V    
+            ([ integrate Temporal [runReader drhov_dt env] >>= integrate Spatial ]
+                ++ (integrateTerms integrate env $ divergenceWithProps [Density, V])
+                ++ [integrate Spatial [runReader dp_dy env] >>= integrate Temporal ]
+            ) 
+            ( concatMap (integrateTerms integrate env) 
+                [ divGrad [Mew,V] 1 
+                  ,divergence [ dmewu_dy, dmewv_dy, dmeww_dy ] 
+                  ,map (\d-> ddf_ d (2/3) Y) (divergenceWithProps [Mew]) 
+                ]
+            )
+            V   
 
 wMomentum:: Reader (ValSet Double) (Equation (Position-> [Term Double]))
 wMomentum =  do
     env <- ask
     return $ let integrate = integ env 
         in Equation
-            [ integrate Temporal [runReader drhow_dt env] >>= integrate Spatial , 
-                integrate Spatial [runReader drhouu_dx env] >>= integrate Temporal, 
-                integrate Spatial [runReader drhouv_dy env] >>= integrate Temporal, 
-                integrate Spatial [runReader drhouw_dz env] >>= integrate Temporal,
-                integrate Spatial [runReader dp_dz env] >>= integrate Temporal ] 
-            [ integrate Spatial [runReader d_dmeww_dx_dx env] >>= integrate Temporal,   --1
-                integrate Spatial [runReader d_dmeww_dy_dy env] >>= integrate Temporal,  --2
-                integrate Spatial [runReader d_dmeww_dz_dz env] >>= integrate Temporal,   --3
-                integrate Spatial [runReader d_dmewu_dz_dx env] >>= integrate Temporal,  --1
-                integrate Spatial [runReader d_dmewv_dz_dy env] >>= integrate Temporal,  --2
-                integrate Spatial [runReader d_dmeww_dz_dz env] >>= integrate Temporal,  --3
-                integrate Spatial [runReader d_23_dmewu_dx_dz env] >>= integrate Temporal,--1
-                integrate Spatial [runReader d_23_dmewv_dy_dz env] >>= integrate Temporal,--2
-                integrate Spatial [runReader d_23_dmeww_dz_dz env] >>= integrate Temporal ]--3
+            ([ integrate Temporal [runReader drhow_dt env] >>= integrate Spatial ]
+                ++ (integrateTerms integrate env $ divergenceWithProps [Density , W] ) 
+                ++[integrate Spatial [runReader dp_dz env] >>= integrate Temporal ]
+            ) 
+            ( concatMap (integrateTerms integrate env) 
+                [ divGrad [Mew,W] 1 
+                  ,divergence [ dmewu_dz, dmewv_dz, dmeww_dz ] 
+                  ,map (\d-> ddf_ d (2/3) Z) (divergenceWithProps [Mew]) 
+                ]
+            )
             W      
 
 energy::Reader (ValSet Double) (Equation (Position-> [Term Double]))
-energy =  do
-    env <- ask
-    return $ let integrate = integ env 
-        in Equation
-            [ integrate Temporal [runReader drhow_dt env] >>= integrate Spatial , 
-                integrate Spatial [runReader drhouu_dx env] >>= integrate Temporal, 
-                integrate Spatial [runReader drhouv_dy env] >>= integrate Temporal, 
-                integrate Spatial [runReader drhouw_dz env] >>= integrate Temporal,
-                integrate Spatial [runReader dp_dz env] >>= integrate Temporal ] 
-            [ integrate Spatial [runReader d_dmeww_dx_dx env] >>= integrate Temporal,   --1
-                integrate Spatial [runReader d_dmeww_dy_dy env] >>= integrate Temporal,  --2
-                integrate Spatial [runReader d_dmeww_dz_dz env] >>= integrate Temporal,   --3
-                integrate Spatial [runReader d_dmewu_dz_dx env] >>= integrate Temporal,  --1
-                integrate Spatial [runReader d_dmewv_dz_dy env] >>= integrate Temporal,  --2
-                integrate Spatial [runReader d_dmeww_dz_dz env] >>= integrate Temporal,  --3
-                integrate Spatial [runReader d_23_dmewu_dx_dz env] >>= integrate Temporal,--1
-                integrate Spatial [runReader d_23_dmewv_dy_dz env] >>= integrate Temporal,--2
-                integrate Spatial [runReader d_23_dmeww_dz_dz env] >>= integrate Temporal ]--3
-            W    
+energy =  undefined   
 
 gasLaw:: Reader (ValSet Double) (Equation (Position-> [Term Double]))
 gasLaw= undefined        
@@ -576,16 +499,6 @@ testTerms = [Unknown 2.4, Constant 1.2, Constant 3.112, Unknown (-0.21),  SubExp
 
 testEq:: Reader (ValSet Double ) (Equation (Position ->[Term Double])) -> Equation (Term Double)
 testEq eq = getDiscEqInstance ( runReader eq initialGrid) testPosition 
-
-ezcontinuity:: Reader (ValSet Double) (Equation (Position-> [Term Double]))
-ezcontinuity = do
-    env <- ask
-    return $ let integrate = integ env 
-        in Equation
-            [ integrate Temporal [runReader drho_dt env] >>= integrate Spatial,
-              integrate Spatial [runReader drhou_dx env] >>= integrate Temporal] 
-            [\_ -> [Constant 0]]
-            Density 
             
 writeTermsOrig:: (Num a, Show a)=> [Term a] -> String
 writeTermsOrig terms =
@@ -601,6 +514,8 @@ writeTerms terms =
     in xs |> reverse
   
 testPosition =   Position 8 3 9 0.0
+    
+
     
 main:: IO()
 main = 
