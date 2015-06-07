@@ -26,7 +26,8 @@ data ValSet a = ValSet{
     ,sideLen:: Map.Map Position (Map.Map Direction a) }
 data Expression a = Expression{getTerms::[Term a]} 
 data Term a = Constant {val::a} | Unknown { coeff::a } | SubExpression {expression::Expression a} 
-    | Derivative { denom::Direction ,function:: Position->Side->Term a, centered::Side }
+    | Derivative { denom::Direction ,function:: Position->Side->Term a, centered::Side, 
+        multiplier:: Position->Side-> a }
 
 instance Functor Term  where
     fmap f x = case x of
@@ -40,8 +41,8 @@ timeStep = 0.0001
 specificHeatCv :: Double
 specificHeatCv = 15
 
-heatConductionK:: Double
-heatConductionK = 0.1
+heatConductivityK:: Double
+heatConductivityK = 0.1
 
 maxPos:: Direction -> Int
 maxPos d = case d of 
@@ -197,22 +198,23 @@ addTerms terms1 terms2 = case terms2 of
 
 approximateDerivative::(Num a, Fractional a)=> ValSet a -> Term a -> Position-> [Term a]
 approximateDerivative vs deriv position= case deriv of 
-    (Derivative direction func side) ->
+    (Derivative direction func side multiplier) ->
         let neighbor = offsetPosition position side
             sl =  runReader (sideLength direction position)
             sln = runReader (sideLength direction neighbor)
             interval = average [sl vs, sln vs]
-            thisVal = func position Center
+            thisVal = func position Center 
             neighborVal = func neighbor Center
             neighborIsUpper = isUpperSide side  
             f first = if neighborIsUpper && first then neighborVal else thisVal
+            mult = multiplier position Center
         in if direction == directionFromCenter side 
             then
                 let first = f True
                     second = f False
                 in case (first, second) of
                     (Constant _, Constant c1) -> 
-                        distributeMultiply [ first , Constant ( (-1)* c1) ] (1/interval)
+                        distributeMultiply [ first , Constant ( (-1)* c1) ] (mult /interval)
                     _ -> distributeMultiply 
                             ( 
                                 approximateDerivative vs 
@@ -224,7 +226,7 @@ approximateDerivative vs deriv position= case deriv of
                                         (if not neighborIsUpper then neighbor else position))
                                     (-1)
                             ) 
-                            (1/interval)
+                            (mult /interval)
             else 
                 let proxyNeighbor p t = func (offsetPosition p $ t $ boundaryPair direction) Center 
                     thisProxyNeighborA = proxyNeighbor position fst
@@ -235,7 +237,7 @@ approximateDerivative vs deriv position= case deriv of
                     (Constant thisA, Constant thisB, Constant nA, Constant nB) ->
                         distributeMultiply [ Constant (average [thisA,nA])
                             , Constant ((-1)* average [thisB,nB]) ] 
-                            (1/ sl vs)    
+                            (mult / sl vs)    
                     _->undefined -- this is just too much work 
     _ -> []
 
@@ -247,7 +249,7 @@ solveUnknown vs (Equation l r _) position=
             _ -> 0
         sumConstants n p =  p + case n of
             Constant c-> c
-            Derivative _ _ _-> sumExpression sumConstants $ approximateDerivative vs n position  
+            Derivative _ _ _ _-> sumExpression sumConstants $ approximateDerivative vs n position  
             SubExpression s -> sumExpression sumConstants $ getTerms s
             _ -> 0
         sumExpression s e = foldr s 0 e
@@ -284,9 +286,9 @@ distributeMultiply terms m = concatMap (multTerm m) terms
 multTerm:: (Num a)=> a -> Term a -> [Term a]
 multTerm m term  = case term of
     SubExpression s -> distributeMultiply ( getTerms s  ) m
-    Derivative direc func side-> 
+    Derivative direc func side multF-> 
         let modf x s =  SubExpression $ Expression $ multTerm m $ func x s
-        in [Derivative direc modf side]
+        in [Derivative direc modf side multF]
     _-> [fmap (\x-> x*m) term]
                 
 integSurface:: (Num a)=> (Side->Term a) -> Position -> Direction -> Reader (ValSet a) [Term a]
@@ -302,7 +304,7 @@ integSurface f position direction = do
                     sideAreaVal = runReader (sideArea s position) vs
                     isUnknown = (direcDimenType direction,isUpper) == (Temporal,True) 
                 in case term of
-                    Derivative _ subf _ -> 
+                    Derivative _ subf _ _-> 
                         SubExpression $ Expression $ distributeMultiply [subf position s] sideAreaVal
                     SubExpression (Expression expr) -> SubExpression $ Expression $ distributeMultiply expr sideAreaVal
                     _-> if isUnknown 
@@ -316,7 +318,7 @@ integSingleTerm term dimetype cellposition =  do
     return $
         let nonDerivativeAnswer = distributeMultiply [term] $ runReader (volumeOrInterval dimetype cellposition) vs 
         in case term of     
-            Derivative direction func _ ->  
+            Derivative direction func _ _->  
                 if dimetype == direcDimenType direction 
                     then runReader (integSurface ( func cellposition ) cellposition direction) vs
                     else nonDerivativeAnswer
@@ -331,21 +333,26 @@ d_:: (Fractional a) => [Property]-> Direction -> Reader (ValSet a) (Term a)
 d_ properties direction = df_ properties 1 direction
 
 df_ :: (Num a,Fractional a) => [Property]-> a ->Direction -> Reader (ValSet a) (Term a)      
-df_ properties factor direction = do
+df_ properties factor direction = dfm_ properties factor (\_ -> \_ -> 1) direction         
+
+dfm_ properties factor multF direction = do
     d<-ask 
     return $ Derivative direction 
         (\x-> \s -> 
             foldr (\next -> \prev -> fmap ((*) ( runReader (prop next x s) d )) prev  |> 
-                multTerm factor |> head) (Constant 1) properties ) 
-        Center        
+                multTerm factor |> head) (Constant 1) properties )
+        Center
+        multF       
       
 dd_ :: (Num a,Fractional a)=> Reader (ValSet a) (Term a) -> Direction -> Reader (ValSet a) (Term a)
 dd_ inner direction = ddf_ inner 1 direction
 
 ddf_ ::(Num a,Fractional a)=> Reader (ValSet a) (Term a) -> a-> Direction -> Reader (ValSet a) (Term a)
-ddf_ inner factor direction = do
+ddf_ inner factor direction = ddfm_ inner factor (\_ -> \_ -> 1) direction
+
+ddfm_ inner factor multF direction = do
     d<- ask
-    return $ Derivative direction (\x-> \s -> runReader inner d |> multTerm factor |> head ) Center
+    return $ Derivative direction (\x-> \s -> runReader inner d |> multTerm factor |> head ) Center multF
         
 drho_dt = d_ [Density] Time
 
@@ -389,11 +396,24 @@ gradient properties constantFactor = enumFrom X |> map (\d-> df_ properties cons
 
 integrateTerms integrate env =map (\term -> integrateOrder integrate Spatial Temporal [runReader term env] )  
 
-divergenceWithProps properties =  map (\x -> d_  (properties++[d2C x]) x ) (enumFrom X)  
+divergenceWithProps properties = divergenceWithPropsFactor properties 1  
+
+divergenceWithPropsFactor properties constantFactor = 
+    map (\x -> df_ (properties++[d2C x]) constantFactor x ) (enumFrom X)
  
 divGrad properties constantFactor = (divergence $ gradient properties constantFactor)  
-        
+
 integrateOrder integrate i1 i2 term = integrate i1 term >>= integrate i2
+        
+squareDerivative properties direction = do
+    vs <- ask
+    return $ 
+        let foldedProps = foldr 
+                (\next -> \prev -> (\pos -> \side -> prev pos side * (runReader (prop next pos side) vs))) 
+                (\_ -> \_ -> 1) 
+                properties
+        in [ddf_ (d_ (properties++properties) direction) (1/2) direction 
+            ,ddfm_ (d_ properties direction) 1 foldedProps direction] 
 
 continuity:: Reader (ValSet Double) (Equation (Position-> [Term Double]))
 continuity = do
@@ -418,7 +438,7 @@ uMomentum = do
             ( concatMap (integrateTerms integrate env) 
                 [ divGrad [Mew,U] 1 
                   ,divergence [ dmewu_dx, dmewv_dx, dmeww_dx ] 
-                  ,map (\d-> ddf_ d (2/3) X) (divergenceWithProps [Mew]) 
+                  ,map (\d-> ddf_ d (-2/3) X) (divergenceWithProps [Mew]) 
                 ]
             )
             U
@@ -435,7 +455,7 @@ vMomentum = do
             ( concatMap (integrateTerms integrate env) 
                 [ divGrad [Mew,V] 1 
                   ,divergence [ dmewu_dy, dmewv_dy, dmeww_dy ] 
-                  ,map (\d-> ddf_ d (2/3) Y) (divergenceWithProps [Mew]) 
+                  ,map (\d-> ddf_ d (-2/3) Y) (divergenceWithProps [Mew]) 
                 ]
             )
             V   
@@ -452,13 +472,26 @@ wMomentum =  do
             ( concatMap (integrateTerms integrate env) 
                 [ divGrad [Mew,W] 1 
                   ,divergence [ dmewu_dz, dmewv_dz, dmeww_dz ] 
-                  ,map (\d-> ddf_ d (2/3) Z) (divergenceWithProps [Mew]) 
+                  ,map (\d-> ddf_ d (-2/3) Z) (divergenceWithProps [Mew]) 
                 ]
             )
             W      
 
 energy::Reader (ValSet Double) (Equation (Position-> [Term Double]))
-energy =  undefined   
+energy =  do
+    env <- ask
+    return $ let integrate = integ env 
+        in Equation
+            ([ integrate Temporal [runReader drhoT_dt env] >>= integrate Spatial ]
+                ++ (integrateTerms integrate env $ divergenceWithPropsFactor [Density , W] specificHeatCv ) 
+                ++ (integrateTerms integrate env $ divergenceWithProps [Pressure] )
+            ) 
+            ( concatMap (integrateTerms integrate env) 
+                [ divGrad [Temperature] heatConductivityK 
+                   
+                ]
+            )
+            Temperature   
 
 gasLaw:: Reader (ValSet Double) (Equation (Position-> [Term Double]))
 gasLaw= undefined        
@@ -506,7 +539,7 @@ writeTermsOrig terms =
             Unknown u -> show u ++ "X + "
             Constant c -> show c ++ " + "
             SubExpression s -> writeTerms (getTerms s) ++ " + "
-            Derivative d _ side -> "derivative( " ++ show d ++ " " ++ show  side ++" )"
+            Derivative d _ side _-> "derivative( " ++ show d ++ " " ++ show  side ++" )"
     in foldr writeTerm " " (terms |> reverse)  
 
 writeTerms terms =
@@ -547,4 +580,10 @@ main =
     >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq wMomentum)
     >>= (\_ -> putStrLn " solving... ")
     >>= (\_ -> putStrLn $ show $ solveUnknown initialGrid (testEq wMomentum) testPosition)
+    >>= (\_ -> putStrLn " ENERGY ------------ ")
+    >>= (\_ -> putStrLn $ writeTerms $ rhs $ testEq energy)
+    >>= (\_ -> putStrLn " = ")
+    >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq energy)
+    >>= (\_ -> putStrLn " solving... ")
+    >>= (\_ -> putStrLn $ show $ solveUnknown initialGrid (testEq energy) testPosition)
 
