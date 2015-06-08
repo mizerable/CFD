@@ -348,11 +348,11 @@ dd_ :: (Num a,Fractional a)=> Reader (ValSet a) (Term a) -> Direction -> Reader 
 dd_ inner direction = ddf_ inner 1 direction
 
 ddf_ ::(Num a,Fractional a)=> Reader (ValSet a) (Term a) -> a-> Direction -> Reader (ValSet a) (Term a)
-ddf_ inner factor direction = ddfm_ inner factor (\_ -> \_ -> 1) direction
+ddf_ inner factor direction = ddfm_ inner factor (\_ -> \_ -> return 1) direction
 
 ddfm_ inner factor multF direction = do
     d<- ask
-    return $ Derivative direction (\x-> \s -> runReader inner d |> multTerm factor |> head ) Center multF
+    return $ Derivative direction (\x-> \s -> runReader inner d |> multTerm factor |> head ) Center (\pos -> \side -> runReader (multF pos side) d)
         
 drho_dt = d_ [Density] Time
 
@@ -405,15 +405,21 @@ divGrad properties constantFactor = (divergence $ gradient properties constantFa
 
 integrateOrder integrate i1 i2 term = integrate i1 term >>= integrate i2
         
-squareDerivative properties direction = do
-    vs <- ask
-    return $ 
-        let foldedProps = foldr 
-                (\next -> \prev -> (\pos -> \side -> prev pos side * (runReader (prop next pos side) vs))) 
-                (\_ -> \_ -> 1) 
-                properties
-        in [ddf_ (d_ (properties++properties) direction) (1/2) direction 
-            ,ddfm_ (d_ properties direction) 1 foldedProps direction] 
+squareDerivative:: (Num a, Fractional a) => [Property] -> a->Direction -> [Reader (ValSet a) (Term a)]        
+squareDerivative properties constantFactor direction = 
+    let foldedProps = foldr 
+            (\next -> \prev ->
+                (\pos -> \side -> 
+                    do
+                        vs <- ask
+                        return $
+                            runReader (prev pos side) vs * runReader (prop next pos side) vs
+                )
+            ) 
+            (\_ -> \_ -> return 1) 
+            properties
+    in [ ddf_ (d_ (properties++properties) direction) (constantFactor * 1/2) direction
+        ,ddfm_ (d_ properties direction) (constantFactor * (-1)) foldedProps direction] 
 
 continuity:: Reader (ValSet Double) (Equation (Position-> [Term Double]))
 continuity = do
@@ -488,7 +494,15 @@ energy =  do
             ) 
             ( concatMap (integrateTerms integrate env) 
                 [ divGrad [Temperature] heatConductivityK 
-                   
+                  , squareDerivative [Mew,U] (8/3) X 
+                  , squareDerivative [Mew,V] (8/3) Y   
+                  , squareDerivative [Mew,W] (8/3) Z
+                  , squareDerivative [Mew,U] 1 Y
+                  , squareDerivative [Mew,V] 1 X
+                  , squareDerivative [Mew,U] 1 Z
+                  , squareDerivative [Mew,W] 1 X
+                  , squareDerivative [Mew,V] 1 Z
+                  , squareDerivative [Mew,W] 1 Y            
                 ]
             )
             Temperature   
