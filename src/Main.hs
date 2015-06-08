@@ -1,6 +1,7 @@
 module Main where
 
 import qualified Data.Map as Map 
+import qualified Data.Set as Set
 import Data.Maybe
 import Control.Monad.State as State
 import Control.Monad.Reader as Reader
@@ -94,7 +95,11 @@ offsetPosition (Position x y z t) side = case side of
                 else 0
         in modifyPositionComponent position direction 
             $ maxOrMin boundary $ getPositionComponent position direction + offsetAmount   
-        
+    |> (\(Position x1 y1 z1 t1) ->
+        if Set.member (Position x1 y1 z1 0.0) wallPositionsSet
+            then Position x1 y1 z1 0.0
+            else Position x1 y1 z1 t1
+    )       
 prop::(Num a, Fractional a)=> Property->Position->Side-> Reader (ValSet a) a
 prop property position side = do
     (ValSet _ v _ _) <- ask 
@@ -102,6 +107,16 @@ prop property position side = do
         let neighbor = offsetPosition position side
             getVal p = fromJust $ Map.lookup p v >>= Map.lookup property  
         in average [getVal position,getVal neighbor]
+
+removeItems  :: (Ord a, Eq a)=> [a] -> [a]-> [a]
+removeItems orig remove= 
+    let removeSet = Set.fromList remove
+    in filter (\e -> Set.notMember e removeSet) orig      
+
+wallPositions :: [Position]
+wallPositions = []
+
+wallPositionsSet = Set.fromList wallPositions 
 
 initialGrid::(Num a,Fractional a) => ValSet a
 initialGrid= 
@@ -119,7 +134,8 @@ initialGrid=
         v = foldr (\next -> \prev -> Map.insert next vMap prev) Map.empty makePositions
         av = foldr (\next -> \prev -> Map.insert next avMap prev) Map.empty makePositions
         sl = foldr (\next -> \prev -> Map.insert next slMap prev) Map.empty makePositions
-    in ValSet p v av sl
+        wallPos = removeItems p wallPositions
+    in ValSet wallPos v av sl
     
 cartProd:: [[a]] -> [[a]] -> [[a]]
 cartProd xs ys = [ x ++ y | x <- xs, y <- ys]
