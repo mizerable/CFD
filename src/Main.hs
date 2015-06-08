@@ -21,7 +21,7 @@ data Position = Position {
     ,zPos::Int
     ,timePos::Double } deriving (Eq, Ord, Show)
 data ValSet a = ValSet{
-    positions:: [Position]
+    calculatedPositions:: [Position]
     ,vals:: Map.Map Position (Map.Map Property a)
     ,areaVal::Map.Map Position (Map.Map Side a)
     ,sideLen:: Map.Map Position (Map.Map Direction a) }
@@ -134,8 +134,8 @@ initialGrid=
         v = foldr (\next -> \prev -> Map.insert next vMap prev) Map.empty makePositions
         av = foldr (\next -> \prev -> Map.insert next avMap prev) Map.empty makePositions
         sl = foldr (\next -> \prev -> Map.insert next slMap prev) Map.empty makePositions
-        wallPos = removeItems p wallPositions
-    in ValSet wallPos v av sl
+        calcPos = removeItems p wallPositions
+    in ValSet calcPos v av sl
     
 cartProd:: [[a]] -> [[a]] -> [[a]]
 cartProd xs ys = [ x ++ y | x <- xs, y <- ys]
