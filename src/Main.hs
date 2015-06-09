@@ -441,7 +441,9 @@ pairedMultipliedDerivatives :: (Num a, Fractional a) =>
 pairedMultipliedDerivatives props1 props2 dir1 dir2 = 
     let p1 = multProps props1 
         p2 = multProps props2
-    in [dd_ (d_ (props1++props2) dir1) dir2 ,]
+    in [dd_ (d_ (props1++props2) dir1) dir2,
+        ddfm_ (d_ props1 dir1) (-1) p2 dir2,
+        ddfm_ (d_ props2 dir1) (-1) p1 dir2]
 
 continuity:: Reader (ValSet Double) (Equation (Position-> [Term Double]))
 continuity = do
@@ -524,13 +526,22 @@ energy =  do
                   , squareDerivative [Mew,U] 1 Z
                   , squareDerivative [Mew,W] 1 X
                   , squareDerivative [Mew,V] 1 Z
-                  , squareDerivative [Mew,W] 1 Y            
+                  , squareDerivative [Mew,W] 1 Y
+                  , pairedMultipliedDerivatives [Mew,U][V] X Y
+                  , pairedMultipliedDerivatives [Mew,U][W] X Z
+                  , pairedMultipliedDerivatives [Mew,W][V] Z Y            
                 ]
             )
             Temperature   
 
-gasLaw:: Reader (ValSet Double) (Equation (Position-> [Term Double]))
-gasLaw= undefined        
+gasLawPressure:: Reader (ValSet Double) (Equation (Position-> [Term Double]))
+gasLawPressure= do
+    env <- ask
+    return $ let integrate = integ env 
+        in Equation
+            ([])
+            ([])
+            Pressure          
     
 getDiscEqInstance:: Equation (Position -> [Term a]) -> Position -> Equation (Term a)
 getDiscEqInstance (Equation l r up) pos = Equation (concatMap (\t -> t pos) l) (concatMap (\t -> t pos) r) up
@@ -561,7 +572,7 @@ runTimeSteps =  mapM
             >>= \_ -> updateDomain vMomentum
             >>= \_ -> updateDomain wMomentum
             >>= \_ -> updateDomain energy
-            >>= \_ -> updateDomain gasLaw ) 
+            >>= \_ -> updateDomain gasLawPressure ) 
         [1..10] 
     
 testTerms = [Unknown 2.4, Constant 1.2, Constant 3.112, Unknown (-0.21),  SubExpression (Expression [Constant 2, Constant 2, SubExpression (Expression [Unknown 0.33333])])]
@@ -583,9 +594,7 @@ writeTerms terms =
     in xs |> reverse
   
 testPosition =   Position 8 3 9 0.0
-    
-
-    
+        
 main:: IO()
 main = 
     putStrLn "starting ..... "
