@@ -1,3 +1,4 @@
+
 module Main where
 
 import qualified Data.Map as Map 
@@ -40,6 +41,12 @@ timeStep = 0.0001
 
 specificHeatCv :: Double
 specificHeatCv = 15
+
+gasConstantR :: Double
+gasConstantR = 8.314
+
+specificHeatCp :: Double
+specificHeatCp = gasConstantR + specificHeatCv
 
 heatConductivityK:: Double
 heatConductivityK = 0.1
@@ -111,7 +118,7 @@ prop property position side = do
 removeItems  :: (Ord a, Eq a)=> [a] -> [a]-> [a]
 removeItems orig remove= 
     let removeSet = Set.fromList remove
-    in filter (\e -> Set.notMember e removeSet) orig      
+    in filter ( `Set.notMember` removeSet) orig      
 
 wallPositions :: [Position]
 wallPositions = []
@@ -121,7 +128,7 @@ wallPositionsSet = Set.fromList wallPositions
 initialGrid::(Num a,Fractional a) => ValSet a
 initialGrid= 
     let p = makePositions
-        vMap = foldr (\next -> \prev -> Map.insert next 
+        vMap = foldr (\next prev -> Map.insert next 
             (case next of 
                 U-> 1.153
                 V-> 0
@@ -129,11 +136,11 @@ initialGrid=
                 _-> 1
                 ) 
             prev) Map.empty (enumFrom U)
-        avMap = foldr (\next -> \prev -> Map.insert next 1.1 prev) Map.empty (enumFrom East)
-        slMap = foldr (\next -> \prev -> Map.insert next 1.12 prev) Map.empty (enumFrom X)
-        v = foldr (\next -> \prev -> Map.insert next vMap prev) Map.empty makePositions
-        av = foldr (\next -> \prev -> Map.insert next avMap prev) Map.empty makePositions
-        sl = foldr (\next -> \prev -> Map.insert next slMap prev) Map.empty makePositions
+        avMap = foldr (\next prev -> Map.insert next 1.1 prev) Map.empty (enumFrom East)
+        slMap = foldr (\next prev -> Map.insert next 1.12 prev) Map.empty (enumFrom X)
+        v = foldr (\next prev -> Map.insert next vMap prev) Map.empty makePositions
+        av = foldr (\next prev -> Map.insert next avMap prev) Map.empty makePositions
+        sl = foldr (\next prev -> Map.insert next slMap prev) Map.empty makePositions
         calcPos = removeItems p wallPositions
     in ValSet calcPos v av sl
     
@@ -142,8 +149,8 @@ cartProd xs ys = [ x ++ y | x <- xs, y <- ys]
 
 makePositions::[Position]
 makePositions = 
-    let ranges = enumFrom X |> map maxPos |> map (\x -> [1..x] |> map (\y -> [y]))
-        posCoords = foldr (\next -> \prev -> cartProd next prev) [[]] ranges
+    let ranges = enumFrom X |> map maxPos |> map (\x -> [1..x] |> map (:[]))
+        posCoords = foldr cartProd [[]] ranges
     in map (\coords -> Position (coords!!0) (coords!!1) (coords!!2) 0.0) posCoords
          
 direcDimenType:: Direction -> DimensionType
@@ -201,7 +208,7 @@ volumeOrInterval dimetype position = do
     vs <- ask
     return $ case dimetype of
         Temporal -> timeStep
-        Spatial -> enumFrom X |> foldr (\d -> \p -> p * runReader (sideLength d position) vs ) 1
+        Spatial -> enumFrom X |> foldr (\d p -> p * runReader (sideLength d position) vs ) 1
 
 addTerm:: [Term a]->Term a->[Term a]
 addTerm terms term = terms ++ [term]
@@ -214,7 +221,7 @@ addTerms terms1 terms2 = case terms2 of
 
 approximateDerivative::(Num a, Fractional a)=> ValSet a -> Term a -> Position-> [Term a]
 approximateDerivative vs deriv position= case deriv of 
-    (Derivative direction func side multiplier) ->
+    (Derivative direction func side m) ->
         let neighbor = offsetPosition position side
             sl =  runReader (sideLength direction position)
             sln = runReader (sideLength direction neighbor)
@@ -223,7 +230,7 @@ approximateDerivative vs deriv position= case deriv of
             neighborVal = func neighbor Center
             neighborIsUpper = isUpperSide side  
             f first = if neighborIsUpper && first then neighborVal else thisVal
-            mult = multiplier position Center
+            mult = m position Center
         in if direction == directionFromCenter side 
             then
                 let first = f True
@@ -265,10 +272,10 @@ solveUnknown vs (Equation l r _) position=
             _ -> 0
         sumConstants n p =  p + case n of
             Constant c-> c
-            Derivative _ _ _ _-> sumExpression sumConstants $ approximateDerivative vs n position  
+            Derivative {}-> sumExpression sumConstants $ approximateDerivative vs n position  
             SubExpression s -> sumExpression sumConstants $ getTerms s
             _ -> 0
-        sumExpression s e = foldr s 0 e
+        sumExpression s = foldr s 0
         lhsUnknown = sumExpression sumUnknown l
         rhsUnknown = sumExpression sumUnknown r
         lhsConstants = sumExpression sumConstants l
@@ -305,7 +312,7 @@ multTerm m term  = case term of
     Derivative direc func side multF-> 
         let modf x s =  SubExpression $ Expression $ multTerm m $ func x s
         in [Derivative direc modf side multF]
-    _-> [fmap (\x-> x*m) term]
+    _-> [fmap (*m) term]
                 
 integSurface:: (Num a)=> (Side->Term a) -> Position -> Direction -> Reader (ValSet a) [Term a]
 integSurface f position direction = do
@@ -325,7 +332,7 @@ integSurface f position direction = do
                     SubExpression (Expression expr) -> SubExpression $ Expression $ distributeMultiply expr sideAreaVal
                     _-> if isUnknown 
                         then Unknown sideAreaVal 
-                        else fmap (\x-> x * sideAreaVal) term
+                        else fmap (* sideAreaVal) term
         in [value (fst sides) True , value (snd sides) False]       
        
 integSingleTerm::  Term Double -> DimensionType -> Position -> Reader (ValSet Double) [Term Double]
@@ -346,27 +353,31 @@ integ vs dimetype terms cellposition = case terms of
     (x:xs) -> runReader (integSingleTerm x dimetype cellposition) vs ++ integ vs dimetype xs cellposition   
 
 d_:: (Fractional a) => [Property]-> Direction -> Reader (ValSet a) (Term a)
-d_ properties direction = df_ properties 1 direction
+d_ properties = df_ properties 1 
 
 df_ :: (Num a,Fractional a) => [Property]-> a ->Direction -> Reader (ValSet a) (Term a)      
-df_ properties factor direction = dfm_ properties factor (\_ -> \_ -> 1) direction         
+df_ properties factor = dfm_ properties factor (\_ _ -> 1)         
 
 dfm_ properties factor multF direction = do
     d<-ask 
     return $ Derivative direction 
-        (\x-> \s -> Constant $ runReader ( multProps properties x s ) d   * factor )
+        (\x s -> Constant $ runReader ( multProps properties x s ) d   * factor )
         Center
         multF       
       
 dd_ :: (Num a,Fractional a)=> Reader (ValSet a) (Term a) -> Direction -> Reader (ValSet a) (Term a)
-dd_ inner direction = ddf_ inner 1 direction
+dd_ inner  = ddf_ inner 1 
 
 ddf_ ::(Num a,Fractional a)=> Reader (ValSet a) (Term a) -> a-> Direction -> Reader (ValSet a) (Term a)
-ddf_ inner factor direction = ddfm_ inner factor (\_ -> \_ -> return 1) direction
+ddf_ inner factor = ddfm_ inner factor (\_ _ -> return 1)
 
 ddfm_ inner factor multF direction = do
     d<- ask
-    return $ Derivative direction (\x-> \s -> runReader inner d |> multTerm factor |> head ) Center (\pos -> \side -> runReader (multF pos side) d)
+    return $ Derivative 
+        direction 
+        (\_ _ -> runReader inner d |> multTerm factor |> head ) 
+        Center 
+        (\pos side -> runReader (multF pos side) d)
         
 drho_dt = d_ [Density] Time
 
@@ -392,21 +403,13 @@ dmewv_dz = d_ [Mew,V] Z
 dmeww_dy = d_ [Mew,W] Y
 dmeww_dz = d_ [Mew,W] Z
 
-drhoTu_dx = df_ [Density,Temperature,U] specificHeatCv X
-drhoTv_dy = df_ [Density,Temperature,V] specificHeatCv Y
-drhoTw_dz = df_ [Density,Temperature,W] specificHeatCv Z
-
-dpu_dx = d_ [Pressure,U] X
-dpv_dy = d_ [Pressure,V] Y
-dpw_dz = d_ [Pressure,W] Z
-
 divergence:: (Num a, Fractional a) => [Reader (ValSet a) (Term a)] -> [Reader (ValSet a) (Term a)]
 divergence vector = 
     let zipped = zip vector (enumFrom X) 
-    in zipped |> map (\pair -> dd_ (fst pair) (snd pair) )
+    in zipped |> map ( uncurry dd_)
     
 gradient:: (Num a, Fractional a) => [Property] -> a-> [Reader (ValSet a) (Term a)]
-gradient properties constantFactor = enumFrom X |> map (\d-> df_ properties constantFactor d)
+gradient properties constantFactor = enumFrom X |> map (df_ properties constantFactor)
 
 integrateTerms integrate env =map (\term -> integrateOrder integrate Spatial Temporal [runReader term env] )  
 
@@ -415,26 +418,23 @@ divergenceWithProps properties = divergenceWithPropsFactor properties 1
 divergenceWithPropsFactor properties constantFactor = 
     map (\x -> df_ (properties++[d2C x]) constantFactor x ) (enumFrom X)
  
-divGrad properties constantFactor = (divergence $ gradient properties constantFactor)  
+divGrad properties constantFactor = divergence $ gradient properties constantFactor  
 
 integrateOrder integrate i1 i2 term = integrate i1 term >>= integrate i2
         
 multProps ::(Num a, Fractional a)=> [Property] ->Position ->Side -> Reader (ValSet a) a
 multProps = 
     foldr 
-        (\next -> \prev ->
-            (\pos -> \side -> 
-                do
-                    vs <- ask
-                    return $ runReader (prev pos side) vs * runReader (prop next pos side) vs
-            )
-        ) 
-        (\_ -> \_ -> return 1) 
+        (\next prev pos side->
+            do
+                vs <- ask
+                return $ runReader (prev pos side) vs * runReader (prop next pos side) vs)         
+        (\_ _ -> return 1) 
                 
 squareDerivative:: (Num a, Fractional a) => [Property] -> a->Direction -> [Reader (ValSet a) (Term a)]        
 squareDerivative properties constantFactor direction = 
     let foldedProps = multProps properties
-    in [ ddf_ (d_ (properties++properties) direction) (constantFactor * 1/2) direction
+    in [ ddf_ (d_ (properties++properties) direction) (constantFactor/2) direction
         ,ddfm_ (d_ properties direction) (constantFactor * (-1)) foldedProps direction] 
 
 pairedMultipliedDerivatives :: (Num a, Fractional a) =>
@@ -451,10 +451,9 @@ continuity = do
     env <- ask
     return $ let integrate = integ env 
         in Equation
-            ([ integrate Temporal [runReader drho_dt env] >>= integrate Spatial]
-                ++ (integrateTerms integrate env $ divergenceWithProps [Density])  
-            )
-            [\_ -> [Constant 0]] 
+            (( integrate Temporal [runReader drho_dt env] >>= integrate Spatial)
+                : integrateTerms integrate env ( divergenceWithProps [Density]) )
+            [ const [Constant 0]] 
             Density
     
 uMomentum:: Reader (ValSet Double) (Equation (Position-> [Term Double]))
@@ -463,7 +462,7 @@ uMomentum = do
     return $ let integrate = integ env 
         in Equation
             ([ integrate Temporal [runReader drhou_dt env] >>= integrate Spatial ]
-                ++ (integrateTerms integrate env $ divergenceWithProps [Density, U])
+                ++ integrateTerms integrate env (divergenceWithProps [Density, U])
                 ++ [integrate Spatial [runReader dp_dx env] >>= integrate Temporal ]
             ) 
             ( concatMap (integrateTerms integrate env) 
@@ -480,7 +479,7 @@ vMomentum = do
     return $ let integrate = integ env
         in Equation
             ([ integrate Temporal [runReader drhov_dt env] >>= integrate Spatial ]
-                ++ (integrateTerms integrate env $ divergenceWithProps [Density, V])
+                ++ integrateTerms integrate env (divergenceWithProps [Density, V])
                 ++ [integrate Spatial [runReader dp_dy env] >>= integrate Temporal ]
             ) 
             ( concatMap (integrateTerms integrate env) 
@@ -497,7 +496,7 @@ wMomentum =  do
     return $ let integrate = integ env 
         in Equation
             ([ integrate Temporal [runReader drhow_dt env] >>= integrate Spatial ]
-                ++ (integrateTerms integrate env $ divergenceWithProps [Density , W] ) 
+                ++ integrateTerms integrate env (divergenceWithProps [Density , W] ) 
                 ++[integrate Spatial [runReader dp_dz env] >>= integrate Temporal ]
             ) 
             ( concatMap (integrateTerms integrate env) 
@@ -514,8 +513,8 @@ energy =  do
     return $ let integrate = integ env 
         in Equation
             ([ integrate Temporal [runReader drhoT_dt env] >>= integrate Spatial ]
-                ++ (integrateTerms integrate env $ divergenceWithPropsFactor [Density , W] specificHeatCv ) 
-                ++ (integrateTerms integrate env $ divergenceWithProps [Pressure] )
+                ++ integrateTerms integrate env (divergenceWithPropsFactor [Density,Temperature] specificHeatCv ) 
+                ++ integrateTerms integrate env (divergenceWithProps [Pressure] )
             ) 
             ( concatMap (integrateTerms integrate env) 
                 [ divGrad [Temperature] heatConductivityK 
@@ -536,12 +535,13 @@ energy =  do
             Temperature   
 
 gasLawPressure:: Reader (ValSet Double) (Equation (Position-> [Term Double]))
-gasLawPressure= do
+gasLawPressure = do
     env <- ask
-    return $ let integrate = integ env 
-        in Equation
-            ([])
-            ([])
+    return $  
+        Equation
+            [ const [Unknown 1]]
+            [ \pos -> [ Constant $ gasConstantR * runReader(prop Density pos Center ) env 
+                * runReader (prop Temperature pos Center) env ] ]
             Pressure          
     
 getDiscEqInstance:: Equation (Position -> [Term a]) -> Position -> Equation (Term a)
@@ -553,7 +553,7 @@ advancePositionTime (Position x y z t ) = Position x y z (t+timeStep)
 applyDiffEq :: (Fractional a)=>ValSet a -> Equation (Position -> [Term a]) -> ValSet a    
 applyDiffEq (ValSet p v av sl) eq =
     let newVals = foldr
-            (\pos -> \dict -> 
+            (\pos dict -> 
                 let subDict = fromJust $ Map.lookup pos dict
                     discEquation=getDiscEqInstance eq pos 
                     solvedProperty = unknownProperty discEquation
@@ -601,35 +601,41 @@ main =
     putStrLn "starting ..... "
     >>= (\_-> print ( solveUnknown initialGrid testEquation $ Position 0 0 0 0.0)) 
     >>= (\_ -> putStrLn $ writeTerms $ distributeMultiply testTerms 2)
-    >>= (\_ -> putStrLn $ show $ runReader (prop U testPosition Center ) initialGrid)
+    >>= (\_ -> print $ runReader (prop U testPosition Center ) initialGrid)
     >>= (\_ -> putStrLn " continuity ------------ ")
     >>= (\_ -> putStrLn $ writeTerms $ rhs $ testEq continuity)
     >>= (\_ -> putStrLn " = ")
     >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq continuity)
     >>= (\_ -> putStrLn " solving... ")
-    >>= (\_ -> putStrLn $ show $ solveUnknown initialGrid (testEq continuity) testPosition)
+    >>= (\_ -> print $ solveUnknown initialGrid (testEq continuity) testPosition)
     >>= (\_ -> putStrLn " U Momentum------------ ")
     >>= (\_ -> putStrLn $ writeTerms $ rhs $ testEq uMomentum)
     >>= (\_ -> putStrLn " = ")
     >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq uMomentum)
     >>= (\_ -> putStrLn " solving... ")
-    >>= (\_ -> putStrLn $ show $ solveUnknown initialGrid (testEq uMomentum) testPosition)
+    >>= (\_ -> print $ solveUnknown initialGrid (testEq uMomentum) testPosition)
     >>= (\_ -> putStrLn " V Momentum------------ ")
     >>= (\_ -> putStrLn $ writeTerms $ rhs $ testEq vMomentum)
     >>= (\_ -> putStrLn " = ")
     >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq vMomentum)
     >>= (\_ -> putStrLn " solving... ")
-    >>= (\_ -> putStrLn $ show $ solveUnknown initialGrid (testEq vMomentum) testPosition)
+    >>= (\_ -> print $ solveUnknown initialGrid (testEq vMomentum) testPosition)
     >>= (\_ -> putStrLn " W Momentum------------ ")
     >>= (\_ -> putStrLn $ writeTerms $ rhs $ testEq wMomentum)
     >>= (\_ -> putStrLn " = ")
     >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq wMomentum)
     >>= (\_ -> putStrLn " solving... ")
-    >>= (\_ -> putStrLn $ show $ solveUnknown initialGrid (testEq wMomentum) testPosition)
+    >>= (\_ -> print $ solveUnknown initialGrid (testEq wMomentum) testPosition)
     >>= (\_ -> putStrLn " ENERGY ------------ ")
     >>= (\_ -> putStrLn $ writeTerms $ rhs $ testEq energy)
     >>= (\_ -> putStrLn " = ")
     >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq energy)
     >>= (\_ -> putStrLn " solving... ")
-    >>= (\_ -> putStrLn $ show $ solveUnknown initialGrid (testEq energy) testPosition)
+    >>= (\_ -> print $ solveUnknown initialGrid (testEq energy) testPosition)
+    >>= (\_ -> putStrLn " Pressure ------------ ")
+    >>= (\_ -> putStrLn $ writeTerms $ rhs $ testEq gasLawPressure)
+    >>= (\_ -> putStrLn " = ")
+    >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq gasLawPressure)
+    >>= (\_ -> putStrLn " solving... remember this is based on the PREV time step,whereas the actual time step thing chains these ")
+    >>= (\_ -> print $ solveUnknown initialGrid (testEq gasLawPressure) testPosition)
 
