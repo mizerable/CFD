@@ -353,9 +353,7 @@ df_ properties factor direction = dfm_ properties factor (\_ -> \_ -> 1) directi
 dfm_ properties factor multF direction = do
     d<-ask 
     return $ Derivative direction 
-        (\x-> \s -> 
-            foldr (\next -> \prev -> fmap ((*) ( runReader (prop next x s) d )) prev  |> 
-                multTerm factor |> head) (Constant 1) properties )
+        (\x-> \s -> Constant $ runReader ( multProps properties x s ) d   * factor )
         Center
         multF       
       
@@ -420,15 +418,14 @@ divGrad properties constantFactor = (divergence $ gradient properties constantFa
 
 integrateOrder integrate i1 i2 term = integrate i1 term >>= integrate i2
         
-multProps ::(Num a, Fractional a)=> [Property] -> Position ->Side -> Reader (ValSet a) a
+multProps ::(Num a, Fractional a)=> [Property] ->Position ->Side -> Reader (ValSet a) a
 multProps = 
     foldr 
         (\next -> \prev ->
             (\pos -> \side -> 
                 do
                     vs <- ask
-                    return $
-                        runReader (prev pos side) vs * runReader (prop next pos side) vs
+                    return $ runReader (prev pos side) vs * runReader (prop next pos side) vs
             )
         ) 
         (\_ -> \_ -> return 1) 
@@ -439,11 +436,12 @@ squareDerivative properties constantFactor direction =
     in [ ddf_ (d_ (properties++properties) direction) (constantFactor * 1/2) direction
         ,ddfm_ (d_ properties direction) (constantFactor * (-1)) foldedProps direction] 
 
-pairedMultipliedDerivatives :: [Property] -> [Property] -> Direction -> Direction -> [Reader (ValSet a) (Term a)]
-pairedMultipliedDerivatives props1 props2 dir1 dir2 =
+pairedMultipliedDerivatives :: (Num a, Fractional a) =>
+     [Property] -> [Property] -> Direction -> Direction -> [Reader (ValSet a) (Term a)]
+pairedMultipliedDerivatives props1 props2 dir1 dir2 = 
     let p1 = multProps props1 
         p2 = multProps props2
-    in undefined
+    in [dd_ (d_ (props1++props2) dir1) dir2 ,]
 
 continuity:: Reader (ValSet Double) (Equation (Position-> [Term Double]))
 continuity = do
