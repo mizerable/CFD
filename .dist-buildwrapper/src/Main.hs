@@ -98,7 +98,8 @@ offsetPosition (Position x y z t) side = case side of
         if Set.member (Position x1 y1 z1 0.0) wallPositionsSet
             then Position x1 y1 z1 0.0
             else Position x1 y1 z1 t1
-    )       
+    )
+           
 prop::(Num a, Fractional a)=> Property->Position->Side-> Reader (ValSet a) a
 prop property position side = do
     (ValSet _ v _ _) <- ask 
@@ -323,7 +324,7 @@ integSurface f position direction = do
                         SubExpression $ Expression $ distributeMultiply [subf position s] sideAreaVal
                     SubExpression (Expression expr) -> SubExpression $ Expression $ distributeMultiply expr sideAreaVal
                     _-> if isUnknown 
-                        then Unknown $ sideAreaVal 
+                        then Unknown sideAreaVal 
                         else fmap (\x-> x * sideAreaVal) term
         in [value (fst sides) True , value (snd sides) False]       
        
