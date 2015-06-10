@@ -55,7 +55,7 @@ maxPos:: Direction -> Int
 maxPos d = case d of 
     X -> 12
     Y -> 12
-    Z -> 12
+    Z -> 0
     Time -> undefined
 
 getPositionComponent:: Position -> Direction -> Int
@@ -121,7 +121,7 @@ removeItems orig remove=
     in filter ( `Set.notMember` removeSet) orig      
 
 wallPositions :: [Position]
-wallPositions = []
+wallPositions = [] 
 
 wallPositionsSet = Set.fromList wallPositions 
 
@@ -130,7 +130,7 @@ initialGrid=
     let p = makePositions
         vMap = foldr (\next prev -> Map.insert next 
             (case next of 
-                U-> 1.153
+                U-> 0
                 V-> 0
                 W-> 0
                 _-> 1
@@ -149,7 +149,7 @@ cartProd xs ys = [ x ++ y | x <- xs, y <- ys]
 
 makePositions::[Position]
 makePositions = 
-    let ranges = enumFrom X |> map maxPos |> map (\x -> [1..x] |> map (:[]))
+    let ranges = enumFrom X |> map maxPos |> map (\x -> [0..x] |> map (:[]))
         posCoords = foldr cartProd [[]] ranges
     in map (\coords -> Position (coords!!0) (coords!!1) (coords!!2) 0.0) posCoords
          
@@ -594,8 +594,23 @@ writeTerms terms =
     let (_:_:xs) = writeTermsOrig terms |> reverse
     in xs |> reverse
   
-testPosition =   Position 8 3 9 0.0
-        
+testPosition =   Position 8 8 0 0.0
+    
+makeRows :: [[a]] -> [a]-> [a] -> Int -> Int-> [[a]]    
+makeRows whole curr [] _ _ = whole ++ [curr]    
+makeRows whole curr items 0 width = makeRows (whole ++ [curr] ) [] items width width          
+makeRows whole curr (x:xs) r width= makeRows whole (curr++[x]) xs (r-1) width   
+             
+stringDomain:: (Num a, Fractional a, Show a ) => Property ->[Position]->Int-> ValSet a -> String
+stringDomain property positions rowLength set =
+    let rows = 
+            makeRows [[]] [] 
+                (map (\next -> runReader (prop property next Center) set ) positions )
+                rowLength
+                rowLength
+        strRows = map (\row -> foldr (\next prev -> prev ++ " " ++ show next) "" row ) rows
+    in foldr (\next prev -> prev ++ "\n" ++ next ) "" strRows 
+            
 main:: IO()
 main = 
     putStrLn "starting ..... "
@@ -638,4 +653,5 @@ main =
     >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq gasLawPressure)
     >>= (\_ -> putStrLn " solving... remember this is based on the PREV time step,whereas the actual time step thing chains these ")
     >>= (\_ -> print $ solveUnknown initialGrid (testEq gasLawPressure) testPosition)
+    >>= (\_ -> putStrLn $ stringDomain U (calculatedPositions initialGrid) (maxPos X) initialGrid )
 
