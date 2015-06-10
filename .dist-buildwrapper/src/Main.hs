@@ -130,7 +130,7 @@ initialGrid=
     let p = makePositions
         vMap = foldr (\next prev -> Map.insert next 
             (case next of 
-                U-> 0
+                U-> 1.12
                 V-> 0
                 W-> 0
                 _-> 1
@@ -610,6 +610,8 @@ stringDomain property positions rowLength set =
                 rowLength
         strRows = map (\row -> foldr (\next prev -> prev ++ " " ++ show next) "" row ) rows
     in foldr (\next prev -> prev ++ "\n" ++ next ) "" strRows 
+
+doRunTimeSteps 
             
 main:: IO()
 main = 
@@ -653,5 +655,5 @@ main =
     >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq gasLawPressure)
     >>= (\_ -> putStrLn " solving... remember this is based on the PREV time step,whereas the actual time step thing chains these ")
     >>= (\_ -> print $ solveUnknown initialGrid (testEq gasLawPressure) testPosition)
-    >>= (\_ -> putStrLn $ stringDomain U (calculatedPositions initialGrid) (maxPos X) initialGrid )
+    >>= (\_ -> putStrLn $ stringDomain U (calculatedPositions initialGrid) (maxPos X) (runReader runTimeSteps initialGrid) )
 
