@@ -53,8 +53,8 @@ heatConductivityK = 0.1
 
 maxPos:: Direction -> Int
 maxPos d = case d of 
-    X -> 12
-    Y -> 12
+    X -> 18
+    Y -> 18
     Z -> 0
     Time -> undefined
 
@@ -138,11 +138,17 @@ initialGrid=
             prev) Map.empty (enumFrom U)
         avMap = foldr (\next prev -> Map.insert next 1.1 prev) Map.empty (enumFrom East)
         slMap = foldr (\next prev -> Map.insert next 1.12 prev) Map.empty (enumFrom X)
-        v = foldr (\next prev -> Map.insert next vMap prev) Map.empty makePositions
-        av = foldr (\next prev -> Map.insert next avMap prev) Map.empty makePositions
-        sl = foldr (\next prev -> Map.insert next slMap prev) Map.empty makePositions
+        v = foldr (\next prev -> Map.insert next vMap prev) Map.empty p
+        av = foldr (\next prev -> Map.insert next avMap prev) Map.empty p
+        sl = foldr (\next prev -> Map.insert next slMap prev) Map.empty p
         calcPos = removeItems p wallPositions
-    in ValSet calcPos v av sl
+    in -- ValSet calcPos v av sl
+        setVal (ValSet calcPos v av sl) (Position 5 5 0 0.0) U 0.0
+
+setVal:: ValSet a -> Position -> Property -> a -> ValSet a
+setVal (ValSet p v av sl) pos property newVal = 
+    let subDict = fromJust $ Map.lookup pos v  
+    in ValSet p (Map.insert pos (Map.insert property newVal subDict) v) av sl
     
 cartProd:: [[a]] -> [[a]] -> [[a]]
 cartProd xs ys = [ x ++ y | x <- xs, y <- ys]
@@ -574,7 +580,7 @@ runTimeSteps =  mapM
             >>= \_ -> updateDomain wMomentum
             >>= \_ -> updateDomain energy
             >>= \_ -> updateDomain gasLawPressure ) 
-        [1..10] 
+        [1..100] 
     
 testTerms = [Unknown 2.4, Constant 1.2, Constant 3.112, Unknown (-0.21),  SubExpression (Expression [Constant 2, Constant 2, SubExpression (Expression [Unknown 0.33333])])]
 
@@ -610,8 +616,6 @@ stringDomain property positions rowLength set =
                 rowLength
         strRows = map (\row -> foldr (\next prev -> prev ++ " " ++ show next) "" row ) rows
     in foldr (\next prev -> prev ++ "\n" ++ next ) "" strRows 
-
-doRunTimeSteps 
             
 main:: IO()
 main = 
@@ -655,5 +659,5 @@ main =
     >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq gasLawPressure)
     >>= (\_ -> putStrLn " solving... remember this is based on the PREV time step,whereas the actual time step thing chains these ")
     >>= (\_ -> print $ solveUnknown initialGrid (testEq gasLawPressure) testPosition)
-    >>= (\_ -> putStrLn $ stringDomain U (calculatedPositions initialGrid) (maxPos X) (runReader runTimeSteps initialGrid) )
+    >>= (\_ -> putStrLn $ stringDomain U (calculatedPositions initialGrid) (maxPos X) (snd $ runState runTimeSteps initialGrid) )
 
