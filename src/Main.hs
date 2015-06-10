@@ -37,7 +37,7 @@ instance Functor Term  where
          _ -> undefined    
             
 timeStep::Double
-timeStep = 0.0001 
+timeStep = 1 
 
 specificHeatCv :: Double
 specificHeatCv = 15
@@ -130,10 +130,10 @@ initialGrid=
     let p = makePositions
         vMap = foldr (\next prev -> Map.insert next 
             (case next of 
-                U-> 0.001
+                U-> 1
                 V-> 0
                 W-> 0
-                Density -> 0.001
+                Density -> 1
                 _-> 1
                 ) 
             prev) Map.empty (enumFrom U)
@@ -226,50 +226,22 @@ addTerms terms1 terms2 = case terms2 of
     (x:xs) -> addTerms (addTerm terms1 x) xs
     _ -> terms1
 
-approximateDerivative::(Num a, Fractional a)=> ValSet a -> Term a -> Position-> [Term a]
+approximateDerivative::(Num a, Fractional a)=> ValSet a -> Term a -> Position-> Term a
 approximateDerivative vs deriv position= case deriv of 
     (Derivative direction func side m) ->
         let neighbor = offsetPosition position side
-            sl =  runReader (sideLength direction position)
-            sln = runReader (sideLength direction neighbor)
-            interval = average [sl vs, sln vs]
+            sl =  runReader (sideLength direction position) vs
+            sln = runReader (sideLength direction neighbor) vs
+            interval = average [sl, sln ]
             thisVal = func position Center 
             neighborVal = func neighbor Center
             neighborIsUpper = isUpperSide side  
             f first = if neighborIsUpper && first then neighborVal else thisVal
             mult = m position Center
-        in if direction == directionFromCenter side 
-            then
-                let first = f True
-                    second = f False
-                in case (first, second) of
-                    (Constant _, Constant c1) -> 
-                        distributeMultiply [ first , Constant ( (-1)* c1) ] (mult /interval)
-                    _ -> distributeMultiply 
-                            ( 
-                                approximateDerivative vs 
-                                    (if neighborIsUpper then neighborVal else thisVal) 
-                                    (if neighborIsUpper then neighbor else position)  
-                                ++ distributeMultiply
-                                    (approximateDerivative vs 
-                                        (if not neighborIsUpper then neighborVal else thisVal) 
-                                        (if not neighborIsUpper then neighbor else position))
-                                    (-1)
-                            ) 
-                            (mult /interval)
-            else 
-                let proxyNeighbor p t = func (offsetPosition p $ t $ boundaryPair direction) Center 
-                    thisProxyNeighborA = proxyNeighbor position fst
-                    thisProxyNeighborB = proxyNeighbor position snd
-                    neighborProxyNeighborA = proxyNeighbor neighbor fst
-                    neighborProxyNeighborB = proxyNeighbor neighbor snd 
-                in case ( thisProxyNeighborA, thisProxyNeighborB,neighborProxyNeighborA,neighborProxyNeighborB) of
-                    (Constant thisA, Constant thisB, Constant nA, Constant nB) ->
-                        distributeMultiply [ Constant (average [thisA,nA])
-                            , Constant ((-1)* average [thisB,nB]) ] 
-                            (mult / sl vs)    
-                    _->undefined -- this is just too much work 
-    _ -> []
+        in case (f True, f False) of
+            (Constant c1 , Constant c2) -> Constant $ (c1-c2)*mult/interval 
+            _ -> undefined 
+    _ -> undefined
 
 solveUnknown::(Fractional a)=> ValSet a->Equation (Term a)->Position->a
 solveUnknown vs (Equation l r _) position= 
@@ -279,7 +251,7 @@ solveUnknown vs (Equation l r _) position=
             _ -> 0
         sumConstants n p =  p + case n of
             Constant c-> c
-            Derivative {}-> sumExpression sumConstants $ approximateDerivative vs n position  
+            Derivative {}-> sumExpression sumConstants $ [approximateDerivative vs n position]  
             SubExpression s -> sumExpression sumConstants $ getTerms s
             _ -> 0
         sumExpression s = foldr s 0
@@ -317,13 +289,13 @@ multTerm:: (Num a)=> a -> Term a -> [Term a]
 multTerm m term  = case term of
     SubExpression s -> distributeMultiply ( getTerms s  ) m
     Derivative direc func side multF-> 
-        let modf x s =  SubExpression $ Expression $ multTerm m $ func x s
+        let modf x s = fmap (*m) (func x s)   
         in [Derivative direc modf side multF]
     _-> [fmap (*m) term]
                 
 integSurface:: (Num a,Fractional a, RealFloat a)=> 
     (Side->Term a) -> Position -> Direction ->Property-> Reader (ValSet a) [Term a]
-integSurface f position direction unknownProperty= do
+integSurface f position direction unknownProp= do
     vs <- ask
     return $ 
         let sides = boundaryPair direction 
@@ -332,17 +304,16 @@ integSurface f position direction unknownProperty= do
                         else (\x -> let [res] = multTerm (-1) x
                                 in res  ).f 
                     term = modf s
-                    sideAreaVal = 1 --runReader (sideArea s position) vs
+                    sideAreaVal = runReader (sideArea s position) vs
                     isUnknown = (direcDimenType direction,isUpper) == (Temporal,True) 
                 in case term of
-                    Derivative _ subf _ _-> 
-                        SubExpression $ Expression $ distributeMultiply [subf position s] sideAreaVal
+                    Derivative d subf _ m-> head $ multTerm sideAreaVal $ Derivative d subf s m
                     SubExpression (Expression expr) -> SubExpression $ Expression $ distributeMultiply expr sideAreaVal
                     _-> if isUnknown 
                         then 
                             let constantVal = fmap
                                     (* (sideAreaVal 
-                                        / runReader (prop unknownProperty position s) vs)) 
+                                        / runReader (prop unknownProp position s) vs)) 
                                     term
                             in Unknown $ if isNaN (val constantVal) 
                                 then 1 else val constantVal      
@@ -354,15 +325,15 @@ integSingleTerm::
 integSingleTerm term dimetype cellposition unknownProp=  do
     vs <- ask
     return $
-        let nonDerivativeAnswer = distributeMultiply [term] $ runReader (volumeOrInterval dimetype cellposition) vs 
+        let nonDerivAnswer = distributeMultiply [term] $ runReader (volumeOrInterval dimetype cellposition) vs 
         in case term of     
-            Derivative direction func _ _->  
-                if dimetype == direcDimenType direction 
-                    then runReader 
+            Derivative direction func _ _->
+                if direcDimenType direction == dimetype  
+                then runReader 
                         (integSurface ( func cellposition ) cellposition direction unknownProp)
                         vs
-                    else nonDerivativeAnswer
-            _ -> nonDerivativeAnswer  
+                else nonDerivAnswer
+            _ -> nonDerivAnswer    
 
 integ::  ValSet Double -> DimensionType -> [Term Double] ->Position ->Reader Property [Term Double]
 integ vs dimetype terms cellposition = do
@@ -425,9 +396,7 @@ dmeww_dy = d_ [Mew,W] Y
 dmeww_dz = d_ [Mew,W] Z
 
 divergence:: (Num a, Fractional a) => [Reader (ValSet a) (Term a)] -> [Reader (ValSet a) (Term a)]
-divergence vector = 
-    let zipped = zip vector (enumFrom X) 
-    in zipped |> map ( uncurry dd_)
+divergence vector = zip vector (enumFrom X) |> map ( uncurry dd_)
     
 gradient:: (Num a, Fractional a) => [Property] -> a-> [Reader (ValSet a) (Term a)]
 gradient properties constantFactor = enumFrom X |> map (df_ properties constantFactor)
@@ -490,9 +459,10 @@ uMomentum = do
                 ++ [integrate Spatial [runReader dp_dx env] >>= integrate Temporal ]
             ) 
             ( concatMap (integrateTerms integrate env) 
-                [ divGrad [Mew,U] 1 
-                  ,divergence [ dmewu_dx, dmewv_dx, dmeww_dx ] 
-                  ,map (\d-> ddf_ d (-2/3) X) (divergenceWithProps [Mew]) 
+                [ -- divGrad [Mew,U] 1
+                    [dd_ ( d_ [U] X ) X ]
+                  --,divergence [ dmewu_dx, dmewv_dx, dmeww_dx ]
+                  --,map (\d-> ddf_ d (-2/3) X) (divergenceWithProps [Mew]) 
                 ]
             )
             U
@@ -582,30 +552,32 @@ applyDiffEq advTime (ValSet p v av sl) eq =
                 let subDict = fromJust $ Map.lookup pos dict
                     discEquation=getDiscEqInstance eq pos 
                     solvedProperty = unknownProperty discEquation
-                    newValue = solveUnknown (ValSet p v av sl) discEquation pos
+                    newValue = 123.123 -- solveUnknown (ValSet p v av sl) discEquation pos
                     newPos = advancePositionTime pos
-                in Map.insert newPos (Map.insert solvedProperty newValue subDict)dict )  
-            v p 
-        newPositions = map timeMove p
+                in Map.insert newPos (Map.insert solvedProperty newValue subDict) dict 
+            )  v p 
+        newPositions = map timeMove p 
     in ValSet newPositions newVals av sl
     
 updateDomain::(Fractional a)=> 
-    Reader (ValSet a) (Equation (Position -> [Term a])) -> Bool ->ValSet a->  ValSet a
-updateDomain equation advanceTime prev= applyDiffEq advanceTime prev $ runReader equation prev       
+    Reader (ValSet a) (Equation (Position -> [Term a])) -> Bool -> State  (ValSet a) ()
+updateDomain equation advanceTime = 
+    state $ \prev -> ((),applyDiffEq advanceTime prev $ runReader equation prev)       
   
 runTimeSteps:: ValSet Double
 runTimeSteps = 
     foldr  
         (\_ prev ->
-            updateDomain continuity False prev
-            |> updateDomain uMomentum False
-            |> updateDomain vMomentum False
-            |> updateDomain wMomentum False
-            |> updateDomain energy False
-            |> updateDomain gasLawPressure True
-        )
-        initialGrid
-        [1..10]
+            snd $ runState (
+                updateDomain continuity False
+                >>= \_ -> updateDomain uMomentum False 
+            ) prev
+            
+            -- |> updateDomain vMomentum False
+            -- |> updateDomain wMomentum False
+            -- |> updateDomain energy False
+            -- |> updateDomain gasLawPressure True
+        ) initialGrid  [1..10]
 
 testTerms = [Unknown 2.4, Constant 1.2, Constant 3.112, Unknown (-0.21),  SubExpression (Expression [Constant 2, Constant 2, SubExpression (Expression [Unknown 0.33333])])]
 
@@ -618,7 +590,7 @@ writeTermsOrig terms =
             Unknown u -> show u ++ "X + "
             Constant c -> show c ++ " + "
             SubExpression s -> writeTerms (getTerms s) ++ " + "
-            Derivative d _ side _-> "derivative( " ++ show d ++ " " ++ show  side ++" )"
+            Derivative d _ side _-> "derivative( " ++ show d ++ " " ++ show  side ++" ) + "
     in foldr writeTerm " " (terms |> reverse)  
 
 writeTerms terms =
@@ -684,11 +656,10 @@ main =
     >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq gasLawPressure)
     >>= (\_ -> putStrLn " solving... remember this is based on the PREV time step,whereas the actual time step thing chains these ")
     >>= (\_ -> print $ solveUnknown initialGrid (testEq gasLawPressure) testPosition)
-    >>= (\_ -> let resultGrid =  runTimeSteps
-                in putStrLn 
+    >>= (\_ -> putStrLn 
                     $ stringDomain 
                         U
-                        (calculatedPositions resultGrid) 
+                        (calculatedPositions runTimeSteps) 
                         (1+maxPos X) 
-                        resultGrid  )
+                        runTimeSteps  )
 
