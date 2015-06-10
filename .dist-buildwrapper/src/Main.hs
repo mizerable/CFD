@@ -130,14 +130,15 @@ initialGrid=
     let p = makePositions
         vMap = foldr (\next prev -> Map.insert next 
             (case next of 
-                U-> 1.12
+                U-> 10
                 V-> 0
                 W-> 0
+                Density -> 1.5
                 _-> 1
                 ) 
             prev) Map.empty (enumFrom U)
         avMap = foldr (\next prev -> Map.insert next 1.1 prev) Map.empty (enumFrom East)
-        slMap = foldr (\next prev -> Map.insert next 1.12 prev) Map.empty (enumFrom X)
+        slMap = foldr (\next prev -> Map.insert next 0.2 prev) Map.empty (enumFrom X)
         v = foldr (\next prev -> Map.insert next vMap prev) Map.empty p
         av = foldr (\next prev -> Map.insert next avMap prev) Map.empty p
         sl = foldr (\next prev -> Map.insert next slMap prev) Map.empty p
@@ -320,8 +321,9 @@ multTerm m term  = case term of
         in [Derivative direc modf side multF]
     _-> [fmap (*m) term]
                 
-integSurface:: (Num a)=> (Side->Term a) -> Position -> Direction -> Reader (ValSet a) [Term a]
-integSurface f position direction = do
+integSurface:: (Num a,Fractional a, RealFloat a)=> 
+    (Side->Term a) -> Position -> Direction ->Property-> Reader (ValSet a) [Term a]
+integSurface f position direction unknownProperty= do
     vs <- ask
     return $ 
         let sides = boundaryPair direction 
@@ -330,33 +332,46 @@ integSurface f position direction = do
                         else (\x -> let [res] = multTerm (-1) x
                                 in res  ).f 
                     term = modf s
-                    sideAreaVal = runReader (sideArea s position) vs
+                    sideAreaVal = 1 --runReader (sideArea s position) vs
                     isUnknown = (direcDimenType direction,isUpper) == (Temporal,True) 
                 in case term of
                     Derivative _ subf _ _-> 
                         SubExpression $ Expression $ distributeMultiply [subf position s] sideAreaVal
                     SubExpression (Expression expr) -> SubExpression $ Expression $ distributeMultiply expr sideAreaVal
                     _-> if isUnknown 
-                        then Unknown sideAreaVal 
+                        then 
+                            let constantVal = fmap
+                                    (* (sideAreaVal 
+                                        / runReader (prop unknownProperty position s) vs)) 
+                                    term
+                            in Unknown $ if isNaN (val constantVal) 
+                                then 1 else val constantVal      
                         else fmap (* sideAreaVal) term
         in [value (fst sides) True , value (snd sides) False]       
        
-integSingleTerm::  Term Double -> DimensionType -> Position -> Reader (ValSet Double) [Term Double]
-integSingleTerm term dimetype cellposition =  do
+integSingleTerm::  
+    Term Double -> DimensionType -> Position -> Property ->Reader (ValSet Double) [Term Double]
+integSingleTerm term dimetype cellposition unknownProp=  do
     vs <- ask
     return $
         let nonDerivativeAnswer = distributeMultiply [term] $ runReader (volumeOrInterval dimetype cellposition) vs 
         in case term of     
             Derivative direction func _ _->  
                 if dimetype == direcDimenType direction 
-                    then runReader (integSurface ( func cellposition ) cellposition direction) vs
+                    then runReader 
+                        (integSurface ( func cellposition ) cellposition direction unknownProp)
+                        vs
                     else nonDerivativeAnswer
             _ -> nonDerivativeAnswer  
 
-integ::  ValSet Double -> DimensionType -> [Term Double] ->Position -> [Term Double]
-integ vs dimetype terms cellposition = case terms of
-    [] -> []
-    (x:xs) -> runReader (integSingleTerm x dimetype cellposition) vs ++ integ vs dimetype xs cellposition   
+integ::  ValSet Double -> DimensionType -> [Term Double] ->Position ->Reader Property [Term Double]
+integ vs dimetype terms cellposition = do
+    unknownProp <- ask
+    return $ case terms of
+        [] -> []
+        (x:xs) -> runReader 
+            (integSingleTerm x dimetype cellposition unknownProp) vs 
+            ++ runReader (integ vs dimetype xs cellposition) unknownProp   
 
 d_:: (Fractional a) => [Property]-> Direction -> Reader (ValSet a) (Term a)
 d_ properties = df_ properties 1 
@@ -452,10 +467,13 @@ pairedMultipliedDerivatives props1 props2 dir1 dir2 =
         ddfm_ (d_ props1 dir1) (-1) p2 dir2,
         ddfm_ (d_ props2 dir1) (-1) p1 dir2]
 
+integUnknown env unknownProp dimetype terms cellposition = 
+    runReader (integ env dimetype terms cellposition)unknownProp
+
 continuity:: Reader (ValSet Double) (Equation (Position-> [Term Double]))
 continuity = do
     env <- ask
-    return $ let integrate = integ env 
+    return $ let integrate = integUnknown env Density 
         in Equation
             (( integrate Temporal [runReader drho_dt env] >>= integrate Spatial)
                 : integrateTerms integrate env ( divergenceWithProps [Density]) )
@@ -465,7 +483,7 @@ continuity = do
 uMomentum:: Reader (ValSet Double) (Equation (Position-> [Term Double]))
 uMomentum = do
     env <- ask
-    return $ let integrate = integ env 
+    return $ let integrate = integUnknown env U
         in Equation
             ([ integrate Temporal [runReader drhou_dt env] >>= integrate Spatial ]
                 ++ integrateTerms integrate env (divergenceWithProps [Density, U])
@@ -482,7 +500,7 @@ uMomentum = do
 vMomentum::Reader (ValSet Double) (Equation (Position-> [Term Double]))
 vMomentum = do
     env <- ask
-    return $ let integrate = integ env
+    return $ let integrate = integUnknown env V
         in Equation
             ([ integrate Temporal [runReader drhov_dt env] >>= integrate Spatial ]
                 ++ integrateTerms integrate env (divergenceWithProps [Density, V])
@@ -499,7 +517,7 @@ vMomentum = do
 wMomentum:: Reader (ValSet Double) (Equation (Position-> [Term Double]))
 wMomentum =  do
     env <- ask
-    return $ let integrate = integ env 
+    return $ let integrate = integUnknown env W 
         in Equation
             ([ integrate Temporal [runReader drhow_dt env] >>= integrate Spatial ]
                 ++ integrateTerms integrate env (divergenceWithProps [Density , W] ) 
@@ -516,7 +534,7 @@ wMomentum =  do
 energy::Reader (ValSet Double) (Equation (Position-> [Term Double]))
 energy =  do
     env <- ask
-    return $ let integrate = integ env 
+    return $ let integrate = integUnknown env Temperature
         in Equation
             ([ integrate Temporal [runReader drhoT_dt env] >>= integrate Spatial ]
                 ++ integrateTerms integrate env (divergenceWithPropsFactor [Density,Temperature] specificHeatCv ) 
@@ -568,22 +586,29 @@ applyDiffEq advTime (ValSet p v av sl) eq =
                     newPos = timeMove pos
                 in Map.insert newPos (Map.insert solvedProperty newValue subDict)dict )  
             v p 
-        newPositions = map timeMove p
+        newPositions = Set.toList 
+            (foldr (\next prev -> Set.insert (timeMove next) prev |> Set.insert next ) 
+            Set.empty p)
     in ValSet newPositions newVals av sl
     
-updateDomain::(Fractional a)=> Reader (ValSet a) (Equation (Position -> [Term a])) -> Bool -> State (ValSet a) ()
-updateDomain equation advanceTime= state $ \prev -> ((),applyDiffEq advanceTime prev $ runReader equation prev)       
+updateDomain::(Fractional a)=> 
+    Reader (ValSet a) (Equation (Position -> [Term a])) -> Bool ->ValSet a->  ValSet a
+updateDomain equation advanceTime prev= applyDiffEq advanceTime prev $ runReader equation prev       
   
-runTimeSteps:: State (ValSet Double) [()]
-runTimeSteps =  mapM 
-        (\_ ->  updateDomain continuity  False 
-            >>= \_ -> updateDomain uMomentum False 
-            >>= \_ -> updateDomain vMomentum False 
-            >>= \_ -> updateDomain wMomentum False 
-            >>= \_ -> updateDomain energy False 
-            >>= \_ -> updateDomain gasLawPressure True ) 
-        [1..100] 
-    
+runTimeSteps:: ValSet Double
+runTimeSteps = 
+    foldr  
+        (\_ prev ->
+            updateDomain continuity False prev
+            |> updateDomain uMomentum False
+            |> updateDomain vMomentum False
+            -- |> updateDomain wMomentum False
+            |> updateDomain energy False
+            |> updateDomain gasLawPressure False 
+        )
+        initialGrid
+        [1..3]
+
 testTerms = [Unknown 2.4, Constant 1.2, Constant 3.112, Unknown (-0.21),  SubExpression (Expression [Constant 2, Constant 2, SubExpression (Expression [Unknown 0.33333])])]
 
 testEq:: Reader (ValSet Double ) (Equation (Position ->[Term Double])) -> Equation (Term Double)
@@ -618,8 +643,6 @@ stringDomain property positions rowLength set =
                 rowLength
         strRows = map (\row -> foldr (\next prev -> prev ++ " " ++ show next) "" row ) rows
     in foldr (\next prev -> prev ++ "\n" ++ next ) "" strRows 
-
-testRun = snd $ runState runTimeSteps initialGrid
             
 main:: IO()
 main = 
@@ -663,6 +686,11 @@ main =
     >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq gasLawPressure)
     >>= (\_ -> putStrLn " solving... remember this is based on the PREV time step,whereas the actual time step thing chains these ")
     >>= (\_ -> print $ solveUnknown initialGrid (testEq gasLawPressure) testPosition)
-    >>= (\_ -> let resultGrid =  testRun
-                in putStrLn $ stringDomain U (calculatedPositions resultGrid) (maxPos X) resultGrid  )
+    >>= (\_ -> let resultGrid =  runTimeSteps
+                in putStrLn 
+                    $ stringDomain 
+                        U
+                        (calculatedPositions resultGrid) 
+                        (1+maxPos X) 
+                        resultGrid  )
 
