@@ -583,12 +583,10 @@ applyDiffEq advTime (ValSet p v av sl) eq =
                     discEquation=getDiscEqInstance eq pos 
                     solvedProperty = unknownProperty discEquation
                     newValue = solveUnknown (ValSet p v av sl) discEquation pos
-                    newPos = timeMove pos
+                    newPos = advancePositionTime pos
                 in Map.insert newPos (Map.insert solvedProperty newValue subDict)dict )  
             v p 
-        newPositions = Set.toList 
-            (foldr (\next prev -> Set.insert (timeMove next) prev |> Set.insert next ) 
-            Set.empty p)
+        newPositions = map timeMove p
     in ValSet newPositions newVals av sl
     
 updateDomain::(Fractional a)=> 
@@ -607,7 +605,7 @@ runTimeSteps =
             |> updateDomain gasLawPressure True
         )
         initialGrid
-        [1..3]
+        [1..10]
 
 testTerms = [Unknown 2.4, Constant 1.2, Constant 3.112, Unknown (-0.21),  SubExpression (Expression [Constant 2, Constant 2, SubExpression (Expression [Unknown 0.33333])])]
 
@@ -627,7 +625,7 @@ writeTerms terms =
     let (_:_:xs) = writeTermsOrig terms |> reverse
     in xs |> reverse
   
-testPosition =   Position 8 8 0 0
+testPosition =   Position 5 5 0 0
     
 makeRows :: [[a]] -> [a]-> [a] -> Int -> Int-> [[a]]    
 makeRows whole curr [] _ _ = whole ++ [curr]    
@@ -647,7 +645,45 @@ stringDomain property positions rowLength set =
 main:: IO()
 main = 
     putStrLn "starting ..... "
-   
+    >>= (\_-> print ( solveUnknown initialGrid testEquation $ Position 0 0 0 0)) 
+    >>= (\_ -> putStrLn $ writeTerms $ distributeMultiply testTerms 2)
+    >>= (\_ -> print $ runReader (prop U testPosition Center ) initialGrid)
+    >>= (\_ -> putStrLn " continuity ------------ ")
+    >>= (\_ -> putStrLn $ writeTerms $ rhs $ testEq continuity)
+    >>= (\_ -> putStrLn " = ")
+    >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq continuity)
+    >>= (\_ -> putStrLn " solving... ")
+    >>= (\_ -> print $ solveUnknown initialGrid (testEq continuity) testPosition)
+    >>= (\_ -> putStrLn " U Momentum------------ ")
+    >>= (\_ -> putStrLn $ writeTerms $ rhs $ testEq uMomentum)
+    >>= (\_ -> putStrLn " = ")
+    >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq uMomentum)
+    >>= (\_ -> putStrLn " solving... ")
+    >>= (\_ -> print $ solveUnknown initialGrid (testEq uMomentum) testPosition)
+    >>= (\_ -> putStrLn " V Momentum------------ ")
+    >>= (\_ -> putStrLn $ writeTerms $ rhs $ testEq vMomentum)
+    >>= (\_ -> putStrLn " = ")
+    >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq vMomentum)
+    >>= (\_ -> putStrLn " solving... ")
+    >>= (\_ -> print $ solveUnknown initialGrid (testEq vMomentum) testPosition)
+    >>= (\_ -> putStrLn " W Momentum------------ ")
+    >>= (\_ -> putStrLn $ writeTerms $ rhs $ testEq wMomentum)
+    >>= (\_ -> putStrLn " = ")
+    >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq wMomentum)
+    >>= (\_ -> putStrLn " solving... ")
+    >>= (\_ -> print $ solveUnknown initialGrid (testEq wMomentum) testPosition)
+    >>= (\_ -> putStrLn " ENERGY ------------ ")
+    >>= (\_ -> putStrLn $ writeTerms $ rhs $ testEq energy)
+    >>= (\_ -> putStrLn " = ")
+    >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq energy)
+    >>= (\_ -> putStrLn " solving... ")
+    >>= (\_ -> print $ solveUnknown initialGrid (testEq energy) testPosition)
+    >>= (\_ -> putStrLn " Pressure ------------ ")
+    >>= (\_ -> putStrLn $ writeTerms $ rhs $ testEq gasLawPressure)
+    >>= (\_ -> putStrLn " = ")
+    >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq gasLawPressure)
+    >>= (\_ -> putStrLn " solving... remember this is based on the PREV time step,whereas the actual time step thing chains these ")
+    >>= (\_ -> print $ solveUnknown initialGrid (testEq gasLawPressure) testPosition)
     >>= (\_ -> let resultGrid =  runTimeSteps
                 in putStrLn 
                     $ stringDomain 
