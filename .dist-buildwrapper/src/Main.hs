@@ -20,7 +20,7 @@ data Position = Position {
     xPos::Int
     ,yPos::Int
     ,zPos::Int
-    ,timePos::Double } deriving (Eq, Ord, Show)
+    ,timePos::Int } deriving (Eq, Ord, Show)
 data ValSet a = ValSet{
     calculatedPositions:: [Position]
     ,vals:: Map.Map Position (Map.Map Property a)
@@ -59,11 +59,11 @@ maxPos d = case d of
     Time -> undefined
 
 getPositionComponent:: Position -> Direction -> Int
-getPositionComponent (Position x y z _) d = case d of 
+getPositionComponent (Position x y z t) d = case d of 
     X -> x
     Y -> y
     Z -> z
-    Time -> undefined
+    Time -> t
 
 c2D:: Property -> Direction
 c2D c = case c of
@@ -84,13 +84,13 @@ modifyPositionComponent (Position x y z t) direction amt= case direction of
     X -> Position amt y z t
     Y -> Position x amt z t 
     Z -> Position x y amt t
-    Time -> undefined -- idk what to do here, time is a double and it won't let me add
+    Time -> Position x y z amt
     
 offsetPosition:: Position->Side ->Position
 offsetPosition (Position x y z t) side = case side of
     Center -> Position x y z t 
     Now -> Position x y z t 
-    Prev -> Position x y z (max 0 (t - timeStep))  
+    Prev -> Position x y z (max 0 (t - 1))  
     _ -> 
         let position = Position x y z t
             maxOrMin = if isUpperSide side then min else max
@@ -102,8 +102,8 @@ offsetPosition (Position x y z t) side = case side of
         in modifyPositionComponent position direction 
             $ maxOrMin boundary $ getPositionComponent position direction + offsetAmount   
     |> (\(Position x1 y1 z1 t1) ->
-        if Set.member (Position x1 y1 z1 0.0) wallPositionsSet
-            then Position x1 y1 z1 0.0
+        if Set.member (Position x1 y1 z1 0) wallPositionsSet
+            then Position x1 y1 z1 0
             else Position x1 y1 z1 t1
     )
            
@@ -143,7 +143,7 @@ initialGrid=
         sl = foldr (\next prev -> Map.insert next slMap prev) Map.empty p
         calcPos = removeItems p wallPositions
     in -- ValSet calcPos v av sl
-        setVal (ValSet calcPos v av sl) (Position 5 5 0 0.0) U 0.0
+        setVal (ValSet calcPos v av sl) (Position 5 5 0 0) U 0.0
 
 setVal:: ValSet a -> Position -> Property -> a -> ValSet a
 setVal (ValSet p v av sl) pos property newVal = 
@@ -157,7 +157,7 @@ makePositions::[Position]
 makePositions = 
     let ranges = enumFrom X |> map maxPos |> map (\x -> [0..x] |> map (:[]))
         posCoords = foldr cartProd [[]] ranges
-    in map (\coords -> Position (coords!!0) (coords!!1) (coords!!2) 0.0) posCoords
+    in map (\coords -> Position (coords!!0) (coords!!1) (coords!!2) 0) posCoords
          
 direcDimenType:: Direction -> DimensionType
 direcDimenType direc = case direc of
@@ -554,32 +554,34 @@ getDiscEqInstance:: Equation (Position -> [Term a]) -> Position -> Equation (Ter
 getDiscEqInstance (Equation l r up) pos = Equation (concatMap (\t -> t pos) l) (concatMap (\t -> t pos) r) up
     
 advancePositionTime :: Position -> Position
-advancePositionTime (Position x y z t ) = Position x y z (t+timeStep)    
+advancePositionTime (Position x y z t ) = Position x y z (t+1)    
     
-applyDiffEq :: (Fractional a)=>ValSet a -> Equation (Position -> [Term a]) -> ValSet a    
-applyDiffEq (ValSet p v av sl) eq =
-    let newVals = foldr
+applyDiffEq :: (Fractional a)=> Bool -> ValSet a -> Equation (Position -> [Term a]) -> ValSet a    
+applyDiffEq advTime (ValSet p v av sl) eq =
+    let timeMove = if advTime then advancePositionTime else (\a -> a)
+        newVals = foldr
             (\pos dict -> 
                 let subDict = fromJust $ Map.lookup pos dict
                     discEquation=getDiscEqInstance eq pos 
                     solvedProperty = unknownProperty discEquation
                     newValue = solveUnknown (ValSet p v av sl) discEquation pos
-                    newPos = advancePositionTime pos  
+                    newPos = timeMove pos
                 in Map.insert newPos (Map.insert solvedProperty newValue subDict)dict )  
             v p 
-    in ValSet p newVals av sl
+        newPositions = map timeMove p
+    in ValSet newPositions newVals av sl
     
-updateDomain::(Fractional a)=> Reader (ValSet a) (Equation (Position -> [Term a])) -> State (ValSet a) ()
-updateDomain equation = state $ \prev -> ((),applyDiffEq prev $ runReader equation prev)       
+updateDomain::(Fractional a)=> Reader (ValSet a) (Equation (Position -> [Term a])) -> Bool -> State (ValSet a) ()
+updateDomain equation advanceTime= state $ \prev -> ((),applyDiffEq advanceTime prev $ runReader equation prev)       
   
 runTimeSteps:: State (ValSet Double) [()]
 runTimeSteps =  mapM 
-        (\_ ->  updateDomain continuity  
-            >>= \_ -> updateDomain uMomentum
-            >>= \_ -> updateDomain vMomentum
-            >>= \_ -> updateDomain wMomentum
-            >>= \_ -> updateDomain energy
-            >>= \_ -> updateDomain gasLawPressure ) 
+        (\_ ->  updateDomain continuity  False 
+            >>= \_ -> updateDomain uMomentum False 
+            >>= \_ -> updateDomain vMomentum False 
+            >>= \_ -> updateDomain wMomentum False 
+            >>= \_ -> updateDomain energy False 
+            >>= \_ -> updateDomain gasLawPressure True ) 
         [1..100] 
     
 testTerms = [Unknown 2.4, Constant 1.2, Constant 3.112, Unknown (-0.21),  SubExpression (Expression [Constant 2, Constant 2, SubExpression (Expression [Unknown 0.33333])])]
@@ -600,7 +602,7 @@ writeTerms terms =
     let (_:_:xs) = writeTermsOrig terms |> reverse
     in xs |> reverse
   
-testPosition =   Position 8 8 0 0.0
+testPosition =   Position 8 8 0 0
     
 makeRows :: [[a]] -> [a]-> [a] -> Int -> Int-> [[a]]    
 makeRows whole curr [] _ _ = whole ++ [curr]    
@@ -616,11 +618,13 @@ stringDomain property positions rowLength set =
                 rowLength
         strRows = map (\row -> foldr (\next prev -> prev ++ " " ++ show next) "" row ) rows
     in foldr (\next prev -> prev ++ "\n" ++ next ) "" strRows 
+
+testRun = snd $ runState runTimeSteps initialGrid
             
 main:: IO()
 main = 
     putStrLn "starting ..... "
-    >>= (\_-> print ( solveUnknown initialGrid testEquation $ Position 0 0 0 0.0)) 
+    >>= (\_-> print ( solveUnknown initialGrid testEquation $ Position 0 0 0 0)) 
     >>= (\_ -> putStrLn $ writeTerms $ distributeMultiply testTerms 2)
     >>= (\_ -> print $ runReader (prop U testPosition Center ) initialGrid)
     >>= (\_ -> putStrLn " continuity ------------ ")
@@ -659,5 +663,6 @@ main =
     >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq gasLawPressure)
     >>= (\_ -> putStrLn " solving... remember this is based on the PREV time step,whereas the actual time step thing chains these ")
     >>= (\_ -> print $ solveUnknown initialGrid (testEq gasLawPressure) testPosition)
-    >>= (\_ -> putStrLn $ stringDomain U (calculatedPositions initialGrid) (maxPos X) (snd $ runState runTimeSteps initialGrid) )
+    >>= (\_ -> let resultGrid =  testRun
+                in putStrLn $ stringDomain U (calculatedPositions resultGrid) (maxPos X) resultGrid  )
 
