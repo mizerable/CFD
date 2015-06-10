@@ -112,8 +112,8 @@ prop property position side = do
     (ValSet _ v _ _) <- ask 
     return $ 
         let neighbor = offsetPosition position side
-            getVal p = fromJust $ Map.lookup p v >>= Map.lookup property  
-        in average [getVal position,getVal neighbor]
+            getVal p = fromJust $ Map.lookup p v >>= Map.lookup property   
+        in average [getVal position ,getVal neighbor]
 
 removeItems  :: (Ord a, Eq a)=> [a] -> [a]-> [a]
 removeItems orig remove= 
@@ -130,15 +130,15 @@ initialGrid=
     let p = makePositions
         vMap = foldr (\next prev -> Map.insert next 
             (case next of 
-                U-> 10
+                U-> 0.001
                 V-> 0
                 W-> 0
-                Density -> 1.5
+                Density -> 0.001
                 _-> 1
                 ) 
             prev) Map.empty (enumFrom U)
-        avMap = foldr (\next prev -> Map.insert next 1.1 prev) Map.empty (enumFrom East)
-        slMap = foldr (\next prev -> Map.insert next 0.2 prev) Map.empty (enumFrom X)
+        avMap = foldr (\next prev -> Map.insert next 1 prev) Map.empty (enumFrom East)
+        slMap = foldr (\next prev -> Map.insert next 1 prev) Map.empty (enumFrom X)
         v = foldr (\next prev -> Map.insert next vMap prev) Map.empty p
         av = foldr (\next prev -> Map.insert next avMap prev) Map.empty p
         sl = foldr (\next prev -> Map.insert next slMap prev) Map.empty p
@@ -602,9 +602,9 @@ runTimeSteps =
             updateDomain continuity False prev
             |> updateDomain uMomentum False
             |> updateDomain vMomentum False
-            -- |> updateDomain wMomentum False
+            |> updateDomain wMomentum False
             |> updateDomain energy False
-            |> updateDomain gasLawPressure False 
+            |> updateDomain gasLawPressure True
         )
         initialGrid
         [1..3]
@@ -647,45 +647,7 @@ stringDomain property positions rowLength set =
 main:: IO()
 main = 
     putStrLn "starting ..... "
-    >>= (\_-> print ( solveUnknown initialGrid testEquation $ Position 0 0 0 0)) 
-    >>= (\_ -> putStrLn $ writeTerms $ distributeMultiply testTerms 2)
-    >>= (\_ -> print $ runReader (prop U testPosition Center ) initialGrid)
-    >>= (\_ -> putStrLn " continuity ------------ ")
-    >>= (\_ -> putStrLn $ writeTerms $ rhs $ testEq continuity)
-    >>= (\_ -> putStrLn " = ")
-    >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq continuity)
-    >>= (\_ -> putStrLn " solving... ")
-    >>= (\_ -> print $ solveUnknown initialGrid (testEq continuity) testPosition)
-    >>= (\_ -> putStrLn " U Momentum------------ ")
-    >>= (\_ -> putStrLn $ writeTerms $ rhs $ testEq uMomentum)
-    >>= (\_ -> putStrLn " = ")
-    >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq uMomentum)
-    >>= (\_ -> putStrLn " solving... ")
-    >>= (\_ -> print $ solveUnknown initialGrid (testEq uMomentum) testPosition)
-    >>= (\_ -> putStrLn " V Momentum------------ ")
-    >>= (\_ -> putStrLn $ writeTerms $ rhs $ testEq vMomentum)
-    >>= (\_ -> putStrLn " = ")
-    >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq vMomentum)
-    >>= (\_ -> putStrLn " solving... ")
-    >>= (\_ -> print $ solveUnknown initialGrid (testEq vMomentum) testPosition)
-    >>= (\_ -> putStrLn " W Momentum------------ ")
-    >>= (\_ -> putStrLn $ writeTerms $ rhs $ testEq wMomentum)
-    >>= (\_ -> putStrLn " = ")
-    >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq wMomentum)
-    >>= (\_ -> putStrLn " solving... ")
-    >>= (\_ -> print $ solveUnknown initialGrid (testEq wMomentum) testPosition)
-    >>= (\_ -> putStrLn " ENERGY ------------ ")
-    >>= (\_ -> putStrLn $ writeTerms $ rhs $ testEq energy)
-    >>= (\_ -> putStrLn " = ")
-    >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq energy)
-    >>= (\_ -> putStrLn " solving... ")
-    >>= (\_ -> print $ solveUnknown initialGrid (testEq energy) testPosition)
-    >>= (\_ -> putStrLn " Pressure ------------ ")
-    >>= (\_ -> putStrLn $ writeTerms $ rhs $ testEq gasLawPressure)
-    >>= (\_ -> putStrLn " = ")
-    >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq gasLawPressure)
-    >>= (\_ -> putStrLn " solving... remember this is based on the PREV time step,whereas the actual time step thing chains these ")
-    >>= (\_ -> print $ solveUnknown initialGrid (testEq gasLawPressure) testPosition)
+   
     >>= (\_ -> let resultGrid =  runTimeSteps
                 in putStrLn 
                     $ stringDomain 
