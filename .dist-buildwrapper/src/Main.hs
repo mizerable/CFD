@@ -106,7 +106,7 @@ positionIfWall (Position x y z t) = if Set.member (Position x y z 0) wallPositio
     then Position x y z 0
     else Position x y z t
     
-envIfWall (Position x y z t) env = if Set.member (Position x y z 0) wallPositionsSet
+envIfWall (Position x y z _) env = if Set.member (Position x y z 0) wallPositionsSet
     then initialGrid
     else env       
            
@@ -117,7 +117,9 @@ prop property position side = do
         let neighbor = offsetPosition position side
             useNeighbor = positionIfWall neighbor
             useNeighborEnv = envIfWall neighbor env
-            getVal p set = fromJust $ Map.lookup p set >>= Map.lookup property   
+            getVal p set = case Map.lookup p set >>= Map.lookup property of 
+                Nothing ->runReader (prop property (offsetPosition position Prev) side) env 
+                Just x -> x
         in average [ getVal position (vals env), getVal useNeighbor (vals useNeighborEnv)]
         
 removeItems  :: (Ord a, Eq a)=> [a] -> [a]-> [a]
@@ -256,7 +258,8 @@ solveUnknown vs (Equation l r _) position=
             _ -> 0
         sumConstants n p =  p + case n of
             Constant c-> c
-            Derivative {}-> sumExpression sumConstants $ [approximateDerivative vs n position]  
+            Derivative {}-> sumExpression sumConstants 
+                [approximateDerivative vs n position]  
             SubExpression s -> sumExpression sumConstants $ getTerms s
             _ -> 0
         sumExpression s = foldr s 0
@@ -584,9 +587,11 @@ runTimeSteps:: ValSet Double
 runTimeSteps = 
     foldr  
         (\_ prev ->
-            let results = concatMap (\x-> applyDiffEq prev $ runReader x prev ) calcSteps
+            let results = 
+                    concatMap (\x-> applyDiffEq prev $ runReader x prev ) calcSteps
             in applyResults results prev 
-        ) initialGrid  [0..3]
+        ) initialGrid  [0..1]
+        
 
 testTerms = [Unknown 2.4, Constant 1.2, Constant 3.112, Unknown (-0.21),  SubExpression (Expression [Constant 2, Constant 2, SubExpression (Expression [Unknown 0.33333])])]
 
