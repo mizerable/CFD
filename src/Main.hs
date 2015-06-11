@@ -40,8 +40,8 @@ instance Functor Term  where
          Unknown u -> Unknown $ f u
          _ -> undefined    
 
-timeStep :: (Num a) => a            
-timeStep = 1 
+timeStep :: (Num a,Fractional a) => a            
+timeStep = 0.0001
 
 specificHeatCv :: (Num a) => a
 specificHeatCv = 15
@@ -298,8 +298,8 @@ testEquation =
 
 sideArea:: (Num a, Fractional a)=>Side -> Position -> a
 sideArea s (Position x y z _) = case s of 
-    Now -> timeStep
-    Prev -> timeStep
+    Now -> 1
+    Prev -> 1
     _ ->fromJust $ areaVal initialGrid |> Map.lookup (Position x y z 0) >>= Map.lookup s   
 
 sideLength:: (Num a, Fractional a) => Direction -> Position ->  a
@@ -490,12 +490,12 @@ uMomentum = do
         in Equation
             (  [ integrate Temporal [runReader drhou_dt env] >>= integrate Spatial ]
                 ++ integrateTerms integrate env (divergenceWithProps [Density, U])
-                 ++ [integrate Spatial [runReader dp_dx env] >>= integrate Temporal ]
+                 -- ++ [integrate Spatial [runReader dp_dx env] >>= integrate Temporal ]
             ) 
             ( concatMap (integrateTerms integrate env) 
                 [  divGrad [Mew,U] 1
-                  ,divergence [ dmewu_dx, dmewv_dx, dmeww_dx ]
-                  ,map (\d-> ddf_ d (-2/3) X) (divergenceWithProps [Mew]) 
+                  --,divergence [ dmewu_dx, dmewv_dx, dmeww_dx ]
+                  --,map (\d-> ddf_ d (-2/3) X) (divergenceWithProps [Mew]) 
                 ] 
             )
             U
@@ -641,7 +641,7 @@ writeTerms terms =
     let (_:_:xs) = writeTermsOrig terms |> reverse
     in xs |> reverse
   
-testPosition =   Position 5 5 0 0
+testPosition =   Position 4 5 0 0
     
 makeRows :: [[a]] -> [a]-> [a] -> Int -> Int-> [[a]]    
 makeRows whole curr [] _ _ = whole ++ [curr]    
@@ -700,5 +700,5 @@ main =
     >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq gasLawPressure)
     >>= (\_ -> putStrLn " solving... ")
     >>= (\_ -> print $ solveUnknown initialGrid (testEq gasLawPressure) testPosition)    
-    >>= (\_ -> putStrLn $ stringDomain U (calculatedPositions runTimeSteps) (1+maxPos X) runTimeSteps  )
+    -- >>= (\_ -> putStrLn $ stringDomain U (calculatedPositions runTimeSteps) (1+maxPos X) runTimeSteps  )
 
