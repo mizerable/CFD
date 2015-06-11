@@ -101,20 +101,24 @@ offsetPosition (Position x y z t) side = case side of
                 else 0
         in modifyPositionComponent position direction 
             $ maxOrMin boundary $ getPositionComponent position direction + offsetAmount   
+
+positionIfWall (Position x y z t) = if Set.member (Position x y z 0) wallPositionsSet
+    then Position x y z 0
+    else Position x y z t
+    
+envIfWall (Position x y z t) env = if Set.member (Position x y z 0) wallPositionsSet
+    then initialGrid
+    else env       
            
 prop::(Num a, Fractional a)=> Property->Position->Side-> Reader (ValSet a) a
 prop property position side = do
-    (ValSet _ v _ _) <- ask 
+    env <- ask 
     return $ 
         let neighbor = offsetPosition position side
-            getVal p set = fromJust $ Map.lookup p set >>= Map.lookup property
-            wallV = vals initialGrid   
-        in position
-            |> ( \(Position x1 y1 z1 t1) ->
-                if Set.member (Position x1 y1 z1 0) wallPositionsSet
-                    then average [getVal (Position x1 y1 z1 0) wallV 
-                        ,getVal (offsetPosition (Position x1 y1 z1 0) side) wallV] 
-                    else average [getVal (Position x1 y1 z1 t1) v,getVal (Position x1 y1 z1 t1) v] )
+            useNeighbor = positionIfWall neighbor
+            useNeighborEnv = envIfWall neighbor env
+            getVal p set = fromJust $ Map.lookup p set >>= Map.lookup property   
+        in average [ getVal position (vals env), getVal useNeighbor (vals useNeighborEnv)]
         
 removeItems  :: (Ord a, Eq a)=> [a] -> [a]-> [a]
 removeItems orig remove= 
