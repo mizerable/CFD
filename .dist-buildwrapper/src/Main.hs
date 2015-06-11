@@ -43,16 +43,16 @@ instance Functor Term  where
 timeStep :: (Num a) => a            
 timeStep = 1 
 
-specificHeatCv :: Double
+specificHeatCv :: (Num a) => a
 specificHeatCv = 15
 
-gasConstantR :: Double
+gasConstantR :: (Num a, Fractional a) => a
 gasConstantR = 8.314
 
-specificHeatCp :: Double
+specificHeatCp :: (Num a, Fractional a ) => a
 specificHeatCp = gasConstantR + specificHeatCv
 
-heatConductivityK:: Double
+heatConductivityK:: (Num a, Fractional a ) => a
 heatConductivityK = 0.1
 
 maxPos:: Direction -> Int
@@ -230,7 +230,7 @@ directionFromCenter side = case side of
     Prev -> Time
     Center -> undefined 
 
-volumeOrInterval:: DimensionType -> Position -> Reader (ValSet Double) Double
+volumeOrInterval:: (Num a, Fractional a ) => DimensionType -> Position -> Reader (ValSet a ) a 
 volumeOrInterval dimetype position = do 
     vs <- ask
     return $ case dimetype of
@@ -256,7 +256,10 @@ approximateDerivative vs deriv position= case deriv of
             thisVal = func position Center 
             neighborVal = func neighbor Center
             neighborIsUpper = isUpperSide side  
-            f first = if neighborIsUpper && first then neighborVal else thisVal
+            f first = case (first, neighborIsUpper) of
+                (True, True) -> neighborVal
+                (False, False) -> neighborVal
+                _-> thisVal
             mult = m position Center
         in case (f True, f False) of
             (Constant c1 , Constant c2) -> Constant $ (c1-c2)*mult/interval 
@@ -282,7 +285,7 @@ solveUnknown vs (Equation l r _) position=
         rhsConstants = sumExpression sumConstants r
     in (rhsConstants - lhsConstants)/(lhsUnknown-rhsUnknown)
         
-testEquation:: Equation (Term Double)
+testEquation:: (Num a, Fractional a ) => Equation (Term a )
 testEquation = 
     Equation 
         --[Unknown 2, Constant 4, Constant (-0.232)]
@@ -342,8 +345,8 @@ integSurface f position direction unknownProp= do
                         else fmap (* sideAreaVal) term
         in [value (fst sides) True , value (snd sides) False]       
        
-integSingleTerm::  
-    Term Double -> DimensionType -> Position -> Property ->Reader (ValSet Double) [Term Double]
+integSingleTerm::  (Num a, Fractional a, RealFloat a ) =>
+    Term a -> DimensionType -> Position -> Property ->Reader (ValSet a) [Term a]
 integSingleTerm term dimetype cellposition unknownProp=  do
     vs <- ask
     return $
@@ -365,7 +368,8 @@ integSingleTerm term dimetype cellposition unknownProp=  do
                 else nonDerivAnswer
             _ -> nonDerivAnswer    
 
-integ::  ValSet Double -> DimensionType -> [Term Double] ->Position ->Reader Property [Term Double]
+integ::  (Num a, Fractional a, RealFloat a ) => 
+    ValSet a-> DimensionType -> [Term a] ->Position ->Reader Property [Term a]
 integ vs dimetype terms cellposition = do
     unknownProp <- ask
     return $ case terms of
@@ -469,7 +473,7 @@ pairedMultipliedDerivatives props1 props2 dir1 dir2 =
 integUnknown env unknownProp dimetype terms cellposition = 
     runReader (integ env dimetype terms cellposition)unknownProp
 
-continuity:: Reader (ValSet Double) (Equation (Position-> [Term Double]))
+--continuity::(Num a, Fractional a)=> Reader (ValSet a) (Equation (Position-> [Term a]))
 continuity = do
     env <- ask
     return $ let integrate = integUnknown env Density 
@@ -479,7 +483,7 @@ continuity = do
             [ const [Constant 0]] 
             Density
     
-uMomentum:: Reader (ValSet Double) (Equation (Position-> [Term Double]))
+--uMomentum::(Num a, Fractional a)=> Reader (ValSet a) (Equation (Position-> [Term a]))
 uMomentum = do
     env <- ask
     return $ let integrate = integUnknown env U
@@ -487,20 +491,16 @@ uMomentum = do
             (  [ integrate Temporal [runReader drhou_dt env] >>= integrate Spatial ]
                 ++ integrateTerms integrate env (divergenceWithProps [Density, U])
                  ++ [integrate Spatial [runReader dp_dx env] >>= integrate Temporal ]
-                --[ integrate Spatial  [runReader drho_dt env]] -- TEST LINE
             ) 
             ( concatMap (integrateTerms integrate env) 
-                [ -- divGrad [Mew,U] 1
-                    [dd_ ( d_ [U] X ) X ]
-                    -- [d_ [U] X]
-                  --,divergence [ dmewu_dx, dmewv_dx, dmeww_dx ]
-                  --,map (\d-> ddf_ d (-2/3) X) (divergenceWithProps [Mew]) 
+                [  divGrad [Mew,U] 1
+                  ,divergence [ dmewu_dx, dmewv_dx, dmeww_dx ]
+                  ,map (\d-> ddf_ d (-2/3) X) (divergenceWithProps [Mew]) 
                 ] 
-                -- ++ [const [Constant 1]] -- testline 
             )
             U
 
-vMomentum::Reader (ValSet Double) (Equation (Position-> [Term Double]))
+--vMomentum::(Num a, Fractional a)=>Reader (ValSet a) (Equation (Position-> [Term a]))
 vMomentum = do
     env <- ask
     return $ let integrate = integUnknown env V
@@ -517,7 +517,7 @@ vMomentum = do
             )
             V   
 
-wMomentum:: Reader (ValSet Double) (Equation (Position-> [Term Double]))
+--wMomentum::(Num a, Fractional a)=> Reader (ValSet a) (Equation (Position-> [Term a]))
 wMomentum =  do
     env <- ask
     return $ let integrate = integUnknown env W 
@@ -534,7 +534,7 @@ wMomentum =  do
             )
             W      
 
-energy::Reader (ValSet Double) (Equation (Position-> [Term Double]))
+--energy::(Num a, Fractional a)=>Reader (ValSet a) (Equation (Position-> [Term a]))
 energy =  do
     env <- ask
     return $ let integrate = integUnknown env Temperature
@@ -556,12 +556,12 @@ energy =  do
                   , squareDerivative [Mew,W] 1 Y
                   , pairedMultipliedDerivatives [Mew,U][V] X Y
                   , pairedMultipliedDerivatives [Mew,U][W] X Z
-                  , pairedMultipliedDerivatives [Mew,W][V] Z Y            
+                  , pairedMultipliedDerivatives [Mew,W][V] Z Y                         
                 ]
             )
             Temperature   
 
-gasLawPressure:: Reader (ValSet Double) (Equation (Position-> [Term Double]))
+--gasLawPressure::(Num a, Fractional a)=> Reader (ValSet a) (Equation (Position-> [Term a]))
 gasLawPressure = do
     env <- ask
     return $  
@@ -609,10 +609,8 @@ calcSteps = [
     ,(uMomentum, True)
     ,(vMomentum,  True)
     ,(wMomentum,  True)
-    ,(energy,  True)    
-    ] 
+    ,(energy,  True)  ] 
 
-runTimeSteps:: ValSet Double
 runTimeSteps = 
     foldr  
         (\_ prev ->
@@ -621,21 +619,22 @@ runTimeSteps =
                         (\x-> applyDiffEq prev (runReader (fst x) prev) $ (snd x) ) 
                         calcSteps
             in applyResults results prev 
-        ) initialGrid  [0..1]
-        
+        ) initialGrid  [0..0]
 
 testTerms = [Unknown 2.4, Constant 1.2, Constant 3.112, Unknown (-0.21),  SubExpression (Expression [Constant 2, Constant 2, SubExpression (Expression [Unknown 0.33333])])]
 
-testEq:: Reader (ValSet Double ) (Equation (Position ->[Term Double])) -> Equation (Term Double)
+testEq:: (Num a, Fractional a)=> Reader (ValSet a ) (Equation (Position ->[Term a])) -> Equation (Term a)
 testEq eq = getDiscEqInstance ( runReader eq initialGrid) testPosition 
             
-writeTermsOrig:: (Num a, Show a)=> [Term a] -> String
+writeTermsOrig:: (Num a, Show a, Fractional a)=> [Term a] -> String
 writeTermsOrig terms =
     let writeTerm t prev = prev ++ case t of
             Unknown u -> show u ++ "X + "
             Constant c -> show c ++ " + "
             SubExpression s -> writeTerms (getTerms s) ++ " + "
-            Derivative d _ side _-> "derivative( " ++ show d ++ " " ++ show  side ++" ) + "
+            Derivative d _ side _-> 
+                "approxDeriv ( " ++ writeTerms [approximateDerivative initialGrid t testPosition ] 
+                    ++ show d ++ " " ++ show  side ++" ) + " 
     in foldr writeTerm " " (terms |> reverse)  
 
 writeTerms terms =
@@ -670,7 +669,7 @@ main =
     >>= (\_ -> putStrLn " = ")
     >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq continuity)
     >>= (\_ -> putStrLn " solving... ")
-    -- >>= (\_ -> print $ solveUnknown initialGrid (testEq continuity) testPosition)
+    >>= (\_ -> print $ solveUnknown initialGrid (testEq continuity) testPosition)
     >>= (\_ -> putStrLn " U Momentum------------ ")
     >>= (\_ -> putStrLn $ writeTerms $ rhs $ testEq uMomentum)
     >>= (\_ -> putStrLn " = ")
@@ -700,11 +699,6 @@ main =
     >>= (\_ -> putStrLn " = ")
     >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq gasLawPressure)
     >>= (\_ -> putStrLn " solving... ")
-    >>= (\_ -> print $ solveUnknown initialGrid (testEq gasLawPressure) testPosition)
-    >>= (\_ -> putStrLn 
-                    $ stringDomain 
-                        U
-                        (calculatedPositions runTimeSteps) 
-                        (1+maxPos X) 
-                        runTimeSteps  )
+    >>= (\_ -> print $ solveUnknown initialGrid (testEq gasLawPressure) testPosition)    
+    >>= (\_ -> putStrLn $ stringDomain U (calculatedPositions runTimeSteps) (1+maxPos X) runTimeSteps  )
 
