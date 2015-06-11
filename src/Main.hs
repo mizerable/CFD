@@ -97,7 +97,7 @@ offsetPosition (Position x y z t) side = case side of
             offsetAmount = if isUpperSide side then 1 else (-1)
             direction = directionFromCenter side
             boundary = if isUpperSide side 
-                then maxPos direction 
+                then maxPos direction
                 else 0
         in modifyPositionComponent position direction 
             $ maxOrMin boundary $ getPositionComponent position direction + offsetAmount   
@@ -117,8 +117,17 @@ prop property position side = do
         let neighbor = offsetPosition position side
             useNeighbor = positionIfWall neighbor
             useNeighborEnv = envIfWall neighbor env
-            getVal p set = case Map.lookup p set >>= Map.lookup property of 
-                Nothing ->runReader (prop property (offsetPosition position Prev) side) env 
+            noValError = error ("no value "
+                                ++ (show $ xPos position)++ " "
+                                ++ (show $ yPos position)++ " "
+                                ++ (show $ zPos position)++ " "
+                                ++ (show $ timePos position)++ " "
+                                ++ show property ++ " "
+                                ++ show side)
+            getVal p set = case Map.lookup p set >>= Map.lookup property of
+                Nothing -> case timePos position of
+                    0 -> noValError
+                    _ -> runReader (prop property (offsetPosition position Prev) side) env 
                 Just x -> x
         in average [ getVal position (vals env), getVal useNeighbor (vals useNeighborEnv)]
         
@@ -549,48 +558,53 @@ gasLawPressure = do
 getDiscEqInstance:: Equation (Position -> [Term a]) -> Position -> Equation (Term a)
 getDiscEqInstance (Equation l r up) pos = Equation (concatMap (\t -> t pos) l) (concatMap (\t -> t pos) r) up
     
-advancePositionTime :: Position -> Position
-advancePositionTime (Position x y z t ) = Position x y z (t+1)    
+advanceTime :: Position -> Position
+advanceTime (Position x y z t ) = Position x y z (t+1)    
     
 applyDiffEq :: (Fractional a)=> 
-    ValSet a -> Equation (Position -> [Term a]) -> [ (Position,Property,a)]    
-applyDiffEq (ValSet p v av sl) eq =
+    ValSet a -> Equation (Position -> [Term a]) -> Bool-> [ (Position,Property,a,Bool)]    
+applyDiffEq (ValSet p v av sl) eq saveAtNextTime=
     map
         (\pos -> 
             let discEquation = getDiscEqInstance eq pos 
                 solvedProperty = unknownProperty discEquation
                 newValue = solveUnknown (ValSet p v av sl) discEquation pos
-            in ( pos, solvedProperty, newValue)
+                --newValue = 9198912.312
+            in ( pos, solvedProperty, newValue, saveAtNextTime)
         )  p
   
-applyResults ::  [(Position, Property, a)]-> ValSet a -> ValSet a
+applyResults ::  [(Position, Property, a,Bool)]-> ValSet a -> ValSet a
 applyResults res (ValSet p v av sl) = 
     let newVals = foldr 
-            (\(pos,property,newVal)  prev->
-                let newPos = advancePositionTime pos
+            (\(pos,property,newVal,saveAtNextTime)  prev->
+                let newPos = if saveAtNextTime 
+                        then advanceTime pos 
+                        else pos
                     subdict = case Map.lookup newPos prev of
                         Nothing -> Map.empty
                         Just d -> d  
                 in Map.insert newPos (Map.insert property newVal subdict) prev
             ) v res
-    in ValSet (map advancePositionTime p) newVals av sl
+    in ValSet (map advanceTime p) newVals av sl
 
 calcSteps = [ 
-    continuity,
-     uMomentum,
-     vMomentum, 
-     wMomentum, 
-     energy, 
-     gasLawPressure] 
+    (continuity, True),
+    (uMomentum, True),
+    (vMomentum,  True),
+    (wMomentum,  True),
+    (energy,  True),
+    (gasLawPressure, False) ] 
 
 runTimeSteps:: ValSet Double
 runTimeSteps = 
     foldr  
         (\_ prev ->
             let results = 
-                    concatMap (\x-> applyDiffEq prev $ runReader x prev ) calcSteps
+                    concatMap 
+                        (\x-> applyDiffEq prev (runReader (fst x) prev) $ (snd x) ) 
+                        calcSteps
             in applyResults results prev 
-        ) initialGrid  [0..1]
+        ) initialGrid  [0..5]
         
 
 testTerms = [Unknown 2.4, Constant 1.2, Constant 3.112, Unknown (-0.21),  SubExpression (Expression [Constant 2, Constant 2, SubExpression (Expression [Unknown 0.33333])])]
