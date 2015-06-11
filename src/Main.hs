@@ -558,14 +558,23 @@ applyDiffEq (ValSet p v av sl) eq =
   
 applyResults ::  [(Position, Property, a)]-> ValSet a -> ValSet a
 applyResults res (ValSet p v av sl) = 
-    let newVals = foldr
+    let newVals = foldr 
             (\(pos,property,newVal)  prev->
-                let subdict = fromJust $ Map.lookup pos prev
-                in Map.insert (advancePositionTime pos) (Map.insert property newVal subdict) prev
+                let newPos = advancePositionTime pos
+                    subdict = case Map.lookup newPos prev of
+                        Nothing -> Map.empty
+                        Just d -> d  
+                in Map.insert newPos (Map.insert property newVal subdict) prev
             ) v res
     in ValSet (map advancePositionTime p) newVals av sl
 
-calcSteps = [ continuity, uMomentum,vMomentum, wMomentum, energy, gasLawPressure] 
+calcSteps = [ 
+    continuity,
+     uMomentum,
+     vMomentum, 
+     wMomentum, 
+     energy, 
+     gasLawPressure] 
 
 runTimeSteps:: ValSet Double
 runTimeSteps = 
