@@ -27,9 +27,13 @@ data ValSet a = ValSet{
     ,areaVal::Map.Map Position (Map.Map Side a)
     ,sideLen:: Map.Map Position (Map.Map Direction a) }
 data Expression a = Expression{getTerms::[Term a]} 
-data Term a = Constant {val::a} | Unknown { coeff::a } | SubExpression {expression::Expression a} 
+data Term a = 
+    Constant {val::a}
+    | Unknown { coeff::a }
+    | SubExpression {expression::Expression a}  
     | Derivative { denom::Direction ,function:: Position->Side->Term a, centered::Side, 
-        multiplier:: Position->Side-> a }
+        multiplier:: Position->Side-> a } 
+        
 instance Functor Term  where
     fmap f x = case x of
          Constant c -> Constant $ f c
@@ -256,8 +260,8 @@ approximateDerivative vs deriv position= case deriv of
             mult = m position Center
         in case (f True, f False) of
             (Constant c1 , Constant c2) -> Constant $ (c1-c2)*mult/interval 
-            _ -> undefined 
-    _ -> undefined
+            _ -> error "can't approx >1 order derivs. deriv must produce constants" 
+    _ -> error "can't approx something that isn't a deriv"
 
 solveUnknown::(Fractional a)=> ValSet a->Equation (Term a)->Position->a
 solveUnknown vs (Equation l r _) position= 
@@ -290,14 +294,14 @@ testEquation =
 (|>) x y = y x
 
 sideArea:: Side -> Position -> Reader (ValSet a) a
-sideArea s position = do
+sideArea s (Position x y z _) = do
     vs <- ask  
-    return $ fromJust $ areaVal vs |> Map.lookup position >>= Map.lookup s   
+    return $ fromJust $ areaVal vs |> Map.lookup (Position x y z 0) >>= Map.lookup s   
 
 sideLength:: Direction -> Position -> Reader (ValSet a) a
-sideLength d position = do
+sideLength d (Position x y z _) = do
     vs <- ask
-    return $ fromJust $ sideLen vs |> Map.lookup position >>= Map.lookup d
+    return $ fromJust $ sideLen vs |> Map.lookup (Position x y z 0) >>= Map.lookup d
 
 distributeMultiply::(Num a)=> [Term a]->a->[Term a]
 distributeMultiply terms m = concatMap (multTerm m) terms
@@ -305,7 +309,7 @@ distributeMultiply terms m = concatMap (multTerm m) terms
 multTerm:: (Num a)=> a -> Term a -> [Term a]
 multTerm m term  = case term of
     SubExpression s -> distributeMultiply ( getTerms s  ) m
-    Derivative direc func side multF-> 
+    Derivative direc func side multF->  
         let modf x s = fmap (*m) (func x s)   
         in [Derivative direc modf side multF]
     _-> [fmap (*m) term]
@@ -342,7 +346,15 @@ integSingleTerm::
 integSingleTerm term dimetype cellposition unknownProp=  do
     vs <- ask
     return $
-        let nonDerivAnswer = distributeMultiply [term] $ runReader (volumeOrInterval dimetype cellposition) vs 
+        let nonDerivAnswer = case term of 
+                SubExpression _ -> error "can't integrate a subexpression as a single term"
+                Unknown c -> multTerm (runReader (volumeOrInterval dimetype cellposition) vs) term -- error( "Unknown " ++ show c)
+                Constant c -> multTerm (runReader (volumeOrInterval dimetype cellposition) vs) term --   error ("Constant " ++ show c)
+                (Derivative d f c m) -> 
+                    multTerm (runReader (volumeOrInterval dimetype cellposition) vs) term
+                    --error ("Derivative " ++ (show d) ++ " " ++ (show c ) )   
+                -- _ -> multTerm (runReader (volumeOrInterval dimetype cellposition) vs) term
+            --multTerm (runReader (volumeOrInterval dimetype cellposition) vs) (Derivative X (\_ _ -> Unknown 1) Center (\_ _ -> 1))
         in case term of     
             Derivative direction func _ _->
                 if direcDimenType direction == dimetype  
@@ -461,8 +473,8 @@ continuity = do
     env <- ask
     return $ let integrate = integUnknown env Density 
         in Equation
-            (( integrate Temporal [runReader drho_dt env] >>= integrate Spatial)
-                : integrateTerms integrate env ( divergenceWithProps [Density]) )
+            ((integrate Temporal [runReader drho_dt env] >>= integrate Spatial) 
+              : integrateTerms integrate env ( divergenceWithProps [Density]) )
             [ const [Constant 0]] 
             Density
     
@@ -471,16 +483,18 @@ uMomentum = do
     env <- ask
     return $ let integrate = integUnknown env U
         in Equation
-            ([ integrate Temporal [runReader drhou_dt env] >>= integrate Spatial ]
-                ++ integrateTerms integrate env (divergenceWithProps [Density, U])
-                ++ [integrate Spatial [runReader dp_dx env] >>= integrate Temporal ]
+            (  --[ integrate Temporal [runReader drhou_dt env] >>= integrate Spatial ]
+               -- ++ integrateTerms integrate env (divergenceWithProps [Density, U])
+                -- ++ [integrate Spatial [runReader dp_dx env] >>= integrate Temporal ]
+                [ integrate Spatial  [runReader drho_dt env]] -- TEST LINE
             ) 
-            ( concatMap (integrateTerms integrate env) 
+            ( --concatMap (integrateTerms integrate env) 
                 [ -- divGrad [Mew,U] 1
-                    [dd_ ( d_ [U] X ) X ]
+                    --[dd_ ( d_ [U] X ) X ]
+                    -- [d_ [U] X]
                   --,divergence [ dmewu_dx, dmewv_dx, dmeww_dx ]
                   --,map (\d-> ddf_ d (-2/3) X) (divergenceWithProps [Mew]) 
-                ]
+                ] ++ [const [Constant 1]]
             )
             U
 
@@ -588,12 +602,13 @@ applyResults res (ValSet p v av sl) =
     in ValSet (map advanceTime p) newVals av sl
 
 calcSteps = [ 
-    (continuity, True),
-    (uMomentum, True),
-    (vMomentum,  True),
-    (wMomentum,  True),
-    (energy,  True),
-    (gasLawPressure, False) ] 
+    (gasLawPressure, False) 
+    ,(continuity, True)
+    --,(uMomentum, True)
+    --,(vMomentum,  True)
+    --,(wMomentum,  True)
+    --,(energy,  True)    
+    ] 
 
 runTimeSteps:: ValSet Double
 runTimeSteps = 
@@ -604,7 +619,7 @@ runTimeSteps =
                         (\x-> applyDiffEq prev (runReader (fst x) prev) $ (snd x) ) 
                         calcSteps
             in applyResults results prev 
-        ) initialGrid  [0..5]
+        ) initialGrid  [0..1]
         
 
 testTerms = [Unknown 2.4, Constant 1.2, Constant 3.112, Unknown (-0.21),  SubExpression (Expression [Constant 2, Constant 2, SubExpression (Expression [Unknown 0.33333])])]
@@ -653,7 +668,7 @@ main =
     >>= (\_ -> putStrLn " = ")
     >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq continuity)
     >>= (\_ -> putStrLn " solving... ")
-    >>= (\_ -> print $ solveUnknown initialGrid (testEq continuity) testPosition)
+    -- >>= (\_ -> print $ solveUnknown initialGrid (testEq continuity) testPosition)
     >>= (\_ -> putStrLn " U Momentum------------ ")
     >>= (\_ -> putStrLn $ writeTerms $ rhs $ testEq uMomentum)
     >>= (\_ -> putStrLn " = ")
