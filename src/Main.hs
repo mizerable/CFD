@@ -7,7 +7,7 @@ import Data.Maybe
 import Control.Monad.State as State
 import Control.Monad.Reader as Reader
   
-data Side = East | West | North | South | Top | Bottom | Now | Prev | Center deriving (Show,Eq,Ord, Enum)
+data Side =  Now | Prev |East | West | North | South | Top | Bottom | Center deriving (Show,Eq,Ord, Enum)
 data Direction = Time | X | Y | Z deriving (Enum,Ord,Eq,Show)
 data DimensionType = Temporal | Spatial deriving ( Eq)
 data Equation a = Equation{
@@ -39,8 +39,8 @@ instance Functor Term  where
          Constant c -> Constant $ f c
          Unknown u -> Unknown $ f u
          _ -> undefined    
-            
-timeStep::Double
+
+timeStep :: (Num a) => a            
 timeStep = 1 
 
 specificHeatCv :: Double
@@ -235,7 +235,7 @@ volumeOrInterval dimetype position = do
     vs <- ask
     return $ case dimetype of
         Temporal -> timeStep
-        Spatial -> enumFrom X |> foldr (\d p -> p * runReader (sideLength d position) vs ) 1
+        Spatial -> enumFrom X |> foldr (\d p -> p * sideLength d position ) 1
 
 addTerm:: [Term a]->Term a->[Term a]
 addTerm terms term = terms ++ [term]
@@ -250,8 +250,8 @@ approximateDerivative::(Num a, Fractional a)=> ValSet a -> Term a -> Position-> 
 approximateDerivative vs deriv position= case deriv of 
     (Derivative direction func side m) ->
         let neighbor = offsetPosition position side
-            sl =  runReader (sideLength direction position) vs
-            sln = runReader (sideLength direction neighbor) vs
+            sl =  sideLength direction position
+            sln = sideLength direction neighbor
             interval = average [sl, sln ]
             thisVal = func position Center 
             neighborVal = func neighbor Center
@@ -293,15 +293,16 @@ testEquation =
 (|>)::a->(a->b)->b
 (|>) x y = y x
 
-sideArea:: Side -> Position -> Reader (ValSet a) a
-sideArea s (Position x y z _) = do
-    vs <- ask  
-    return $ fromJust $ areaVal vs |> Map.lookup (Position x y z 0) >>= Map.lookup s   
+sideArea:: (Num a, Fractional a)=>Side -> Position -> a
+sideArea s (Position x y z _) = case s of 
+    Now -> timeStep
+    Prev -> timeStep
+    _ ->fromJust $ areaVal initialGrid |> Map.lookup (Position x y z 0) >>= Map.lookup s   
 
-sideLength:: Direction -> Position -> Reader (ValSet a) a
-sideLength d (Position x y z _) = do
-    vs <- ask
-    return $ fromJust $ sideLen vs |> Map.lookup (Position x y z 0) >>= Map.lookup d
+sideLength:: (Num a, Fractional a) => Direction -> Position ->  a
+sideLength d (Position x y z _) = case d of 
+    Time -> timeStep
+    _ ->fromJust $ sideLen initialGrid |> Map.lookup (Position x y z 0) >>= Map.lookup d
 
 distributeMultiply::(Num a)=> [Term a]->a->[Term a]
 distributeMultiply terms m = concatMap (multTerm m) terms
@@ -325,7 +326,7 @@ integSurface f position direction unknownProp= do
                         else (\x -> let [res] = multTerm (-1) x
                                 in res  ).f 
                     term = modf s
-                    sideAreaVal = runReader (sideArea s position) vs
+                    sideAreaVal = sideArea s position
                     isUnknown = (direcDimenType direction,isUpper) == (Temporal,True) 
                 in case term of
                     Derivative d subf _ m-> head $ multTerm sideAreaVal $ Derivative d subf s m
@@ -348,13 +349,13 @@ integSingleTerm term dimetype cellposition unknownProp=  do
     return $
         let nonDerivAnswer = case term of 
                 SubExpression _ -> error "can't integrate a subexpression as a single term"
-                Unknown c -> multTerm (runReader (volumeOrInterval dimetype cellposition) vs) term -- error( "Unknown " ++ show c)
-                Constant c -> multTerm (runReader (volumeOrInterval dimetype cellposition) vs) term --   error ("Constant " ++ show c)
-                (Derivative d f c m) -> 
-                    multTerm (runReader (volumeOrInterval dimetype cellposition) vs) term
+                _ -> multTerm (runReader (volumeOrInterval dimetype cellposition) vs) term
+                --Unknown c -> multTerm (runReader (volumeOrInterval dimetype cellposition) vs) term -- error( "Unknown " ++ show c)
+                --Constant c -> multTerm (runReader (volumeOrInterval dimetype cellposition) vs) term --   error ("Constant " ++ show c)
+                --(Derivative d f c m) -> 
+                    --multTerm (runReader (volumeOrInterval dimetype cellposition) vs) (Derivative X (\_ _ -> Constant 1) Center (\_ _ -> 1))
+                    --multTerm (runReader (volumeOrInterval dimetype cellposition) vs) term
                     --error ("Derivative " ++ (show d) ++ " " ++ (show c ) )   
-                -- _ -> multTerm (runReader (volumeOrInterval dimetype cellposition) vs) term
-            --multTerm (runReader (volumeOrInterval dimetype cellposition) vs) (Derivative X (\_ _ -> Unknown 1) Center (\_ _ -> 1))
         in case term of     
             Derivative direction func _ _->
                 if direcDimenType direction == dimetype  
@@ -483,18 +484,19 @@ uMomentum = do
     env <- ask
     return $ let integrate = integUnknown env U
         in Equation
-            (  --[ integrate Temporal [runReader drhou_dt env] >>= integrate Spatial ]
-               -- ++ integrateTerms integrate env (divergenceWithProps [Density, U])
-                -- ++ [integrate Spatial [runReader dp_dx env] >>= integrate Temporal ]
-                [ integrate Spatial  [runReader drho_dt env]] -- TEST LINE
+            (  [ integrate Temporal [runReader drhou_dt env] >>= integrate Spatial ]
+                ++ integrateTerms integrate env (divergenceWithProps [Density, U])
+                 ++ [integrate Spatial [runReader dp_dx env] >>= integrate Temporal ]
+                --[ integrate Spatial  [runReader drho_dt env]] -- TEST LINE
             ) 
-            ( --concatMap (integrateTerms integrate env) 
+            ( concatMap (integrateTerms integrate env) 
                 [ -- divGrad [Mew,U] 1
-                    --[dd_ ( d_ [U] X ) X ]
+                    [dd_ ( d_ [U] X ) X ]
                     -- [d_ [U] X]
                   --,divergence [ dmewu_dx, dmewv_dx, dmeww_dx ]
                   --,map (\d-> ddf_ d (-2/3) X) (divergenceWithProps [Mew]) 
-                ] ++ [const [Constant 1]]
+                ] 
+                -- ++ [const [Constant 1]] -- testline 
             )
             U
 
@@ -604,10 +606,10 @@ applyResults res (ValSet p v av sl) =
 calcSteps = [ 
     (gasLawPressure, False) 
     ,(continuity, True)
-    --,(uMomentum, True)
-    --,(vMomentum,  True)
-    --,(wMomentum,  True)
-    --,(energy,  True)    
+    ,(uMomentum, True)
+    ,(vMomentum,  True)
+    ,(wMomentum,  True)
+    ,(energy,  True)    
     ] 
 
 runTimeSteps:: ValSet Double
