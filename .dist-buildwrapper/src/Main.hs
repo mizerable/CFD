@@ -4,7 +4,6 @@ module Main where
 import qualified Data.Map as Map 
 import qualified Data.Set as Set
 import Data.Maybe
-import Control.Monad.State as State
 import Control.Monad.Reader as Reader
   
 data Side =  Now | Prev |East | West | North | South | Top | Bottom | Center deriving (Show,Eq,Ord, Enum)
@@ -230,12 +229,10 @@ directionFromCenter side = case side of
     Prev -> Time
     Center -> undefined 
 
-volumeOrInterval:: (Num a, Fractional a ) => DimensionType -> Position -> Reader (ValSet a ) a 
-volumeOrInterval dimetype position = do 
-    vs <- ask
-    return $ case dimetype of
-        Temporal -> timeStep
-        Spatial -> enumFrom X |> foldr (\d p -> p * sideLength d position ) 1
+volumeOrInterval:: (Num a, Fractional a ) => DimensionType -> Position ->a  
+volumeOrInterval dimetype position = case dimetype of
+    Temporal -> timeStep
+    Spatial -> enumFrom X |> foldr (\d p -> p * sideLength d position ) 1
 
 addTerm:: [Term a]->Term a->[Term a]
 addTerm terms term = terms ++ [term]
@@ -246,8 +243,8 @@ addTerms terms1 terms2 = case terms2 of
     (x:xs) -> addTerms (addTerm terms1 x) xs
     _ -> terms1
 
-approximateDerivative::(Num a, Fractional a)=> ValSet a -> Term a -> Position-> Term a
-approximateDerivative vs deriv position= case deriv of 
+approximateDerivative::(Num a, Fractional a)=>  Term a -> Position-> Term a
+approximateDerivative deriv position= case deriv of 
     (Derivative direction func side m) ->
         let neighbor = offsetPosition position side
             sl =  sideLength direction position
@@ -275,7 +272,7 @@ solveUnknown vs (Equation l r _) position=
         sumConstants n p =  p + case n of
             Constant c-> c
             Derivative {}-> sumExpression sumConstants 
-                [approximateDerivative vs n position]  
+                [approximateDerivative n position]  
             SubExpression s -> sumExpression sumConstants $ getTerms s
             _ -> 0
         sumExpression s = foldr s 0
@@ -352,7 +349,7 @@ integSingleTerm term dimetype cellposition unknownProp=  do
     return $
         let nonDerivAnswer = case term of 
                 SubExpression _ -> error "can't integrate a subexpression as a single term"
-                _ -> multTerm (runReader (volumeOrInterval dimetype cellposition) vs) term
+                _ -> multTerm (volumeOrInterval dimetype cellposition) term
                 --Unknown c -> multTerm (runReader (volumeOrInterval dimetype cellposition) vs) term -- error( "Unknown " ++ show c)
                 --Constant c -> multTerm (runReader (volumeOrInterval dimetype cellposition) vs) term --   error ("Constant " ++ show c)
                 --(Derivative d f c m) -> 
@@ -490,12 +487,12 @@ uMomentum = do
         in Equation
             (  [ integrate Temporal [runReader drhou_dt env] >>= integrate Spatial ]
                 ++ integrateTerms integrate env (divergenceWithProps [Density, U])
-                 -- ++ [integrate Spatial [runReader dp_dx env] >>= integrate Temporal ]
+                 ++ [integrate Spatial [runReader dp_dx env] >>= integrate Temporal ]
             ) 
             ( concatMap (integrateTerms integrate env) 
                 [  divGrad [Mew,U] 1
-                  --,divergence [ dmewu_dx, dmewv_dx, dmeww_dx ]
-                  --,map (\d-> ddf_ d (-2/3) X) (divergenceWithProps [Mew]) 
+                  ,divergence [ dmewu_dx, dmewv_dx, dmeww_dx ]
+                  ,map (\d-> ddf_ d (-2/3) X) (divergenceWithProps [Mew]) 
                 ] 
             )
             U
@@ -587,7 +584,7 @@ applyDiffEq (ValSet p v av sl) eq saveAtNextTime=
                 newValue = solveUnknown (ValSet p v av sl) discEquation pos
                 --newValue = 9198912.312
             in ( pos, solvedProperty, newValue, saveAtNextTime)
-        )  p
+        )  $! p
   
 applyResults ::  [(Position, Property, a,Bool)]-> ValSet a -> ValSet a
 applyResults res (ValSet p v av sl) = 
@@ -616,10 +613,10 @@ runTimeSteps =
         (\_ prev ->
             let results = 
                     concatMap 
-                        (\x-> applyDiffEq prev (runReader (fst x) prev) $ (snd x) ) 
+                        (\x-> applyDiffEq prev (runReader (fst x) prev) (snd x) )  
                         calcSteps
             in applyResults results prev 
-        ) initialGrid  [0..0]
+        ) initialGrid  [0..5]
 
 testTerms = [Unknown 2.4, Constant 1.2, Constant 3.112, Unknown (-0.21),  SubExpression (Expression [Constant 2, Constant 2, SubExpression (Expression [Unknown 0.33333])])]
 
@@ -633,7 +630,7 @@ writeTermsOrig terms =
             Constant c -> show c ++ " + "
             SubExpression s -> writeTerms (getTerms s) ++ " + "
             Derivative d _ side _-> 
-                "approxDeriv ( " ++ writeTerms [approximateDerivative initialGrid t testPosition ] 
+                "approxDeriv ( " ++ writeTerms [approximateDerivative t testPosition ] 
                     ++ show d ++ " " ++ show  side ++" ) + " 
     in foldr writeTerm " " (terms |> reverse)  
 
@@ -700,5 +697,5 @@ main =
     >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq gasLawPressure)
     >>= (\_ -> putStrLn " solving... ")
     >>= (\_ -> print $ solveUnknown initialGrid (testEq gasLawPressure) testPosition)    
-    -- >>= (\_ -> putStrLn $ stringDomain U (calculatedPositions runTimeSteps) (1+maxPos X) runTimeSteps  )
+    >>= (\_ -> putStrLn $ stringDomain U (calculatedPositions runTimeSteps) (1+maxPos X) runTimeSteps  )
 
