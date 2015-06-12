@@ -1263,3 +1263,12 @@ Temporary Items
 /.dist-buildwrapper/
 /.dist-buildwrapper/
 /.dist-buildwrapper/
+src/text.txt
+.dist-buildwrapper/src/.Main.hs.bwinfo
+src/main.exe
+.dist-buildwrapper/src/.Main.hs.bwinfo
+src/main.hi
+src/main.o
+src/main.hi
+.dist-buildwrapper/src/.Main.hs.bwusage
+.dist-buildwrapper/src/Main.hs
