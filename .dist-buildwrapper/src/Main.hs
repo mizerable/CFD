@@ -6,7 +6,6 @@ import qualified Data.Set as Set
 import Data.Maybe
 import Control.Monad.Reader as Reader
 import Control.Monad.Par as Par
-
   
 data Side =  Now | Prev |East | West | North | South | Top | Bottom | Center deriving (Show,Eq,Ord, Enum)
 data Direction = Time | X | Y | Z deriving (Enum,Ord,Eq,Show)
@@ -40,6 +39,9 @@ instance Functor Term  where
          Constant c -> Constant $ f c
          Unknown u -> Unknown $ f u
          _ -> undefined    
+
+instance Par.NFData Property 
+instance Par.NFData Position
 
 timeStep :: (Num a,Fractional a) => a            
 timeStep = 0.0001
@@ -403,29 +405,56 @@ ddfm_ inner factor multF direction = do
         (\_ _ -> runReader inner d |> multTerm factor |> head ) 
         Center 
         (\pos side -> runReader (multF pos side) d)
-        
+       
+drho_dt:: (Fractional a) => Reader (ValSet a) (Term a)        
 drho_dt = d_ [Density] Time
 
+dp_dx:: (Fractional a) => Reader (ValSet a) (Term a)
 dp_dx = d_ [Pressure] X
+
+dp_dy:: (Fractional a) => Reader (ValSet a) (Term a)
 dp_dy = d_ [Pressure] Y
+
+dp_dz:: (Fractional a) => Reader (ValSet a) (Term a)
 dp_dz = d_ [Pressure] Z
 
+drhou_dt:: (Fractional a) => Reader (ValSet a) (Term a)
 drhou_dt =d_ [Density, U] Time   
+
+drhov_dt:: (Fractional a) => Reader (ValSet a) (Term a)
 drhov_dt =d_ [Density, V] Time
+
+drhow_dt:: (Fractional a) => Reader (ValSet a) (Term a)
 drhow_dt =d_ [Density, W] Time
 
+drhoT_dt:: (Fractional a) => Reader (ValSet a) (Term a)
 drhoT_dt = df_ [Density, Temperature] specificHeatCv Time 
 
+dmewu_dx:: (Fractional a) => Reader (ValSet a) (Term a)
 dmewu_dx = d_ [Mew, U] X
+
+dmewu_dy:: (Fractional a) => Reader (ValSet a) (Term a)
 dmewu_dy = d_ [Mew, U] Y
+
+dmewu_dz:: (Fractional a) => Reader (ValSet a) (Term a)
 dmewu_dz = d_ [Mew, U] Z
 
+dmewv_dx:: (Fractional a) => Reader (ValSet a) (Term a)
 dmewv_dx = d_ [Mew, V] X
+
+dmeww_dx:: (Fractional a) => Reader (ValSet a) (Term a)
 dmeww_dx = d_ [Mew, W] X
 
+dmewv_dy:: (Fractional a) => Reader (ValSet a) (Term a)
 dmewv_dy = d_ [Mew,V] Y
+
+dmewv_dz:: (Fractional a) => Reader (ValSet a) (Term a)
 dmewv_dz = d_ [Mew,V] Z
+
+dmeww_dy:: (Fractional a) => Reader (ValSet a) (Term a)
 dmeww_dy = d_ [Mew,W] Y
+
+dmeww_dz:: (Fractional a) => Reader (ValSet a) (Term a)
 dmeww_dz = d_ [Mew,W] Z
 
 divergence:: (Num a, Fractional a) => [Reader (ValSet a) (Term a)] -> [Reader (ValSet a) (Term a)]
@@ -472,7 +501,7 @@ pairedMultipliedDerivatives props1 props2 dir1 dir2 =
 integUnknown env unknownProp dimetype terms cellposition = 
     runReader (integ env dimetype terms cellposition)unknownProp
 
---continuity::(Num a, Fractional a)=> Reader (ValSet a) (Equation (Position-> [Term a]))
+continuity::(Num a, Fractional a, RealFloat a)=> Reader (ValSet a) (Equation (Position-> [Term a]))
 continuity = do
     env <- ask
     return $ let integrate = integUnknown env Density 
@@ -482,7 +511,7 @@ continuity = do
             [ const [Constant 0]] 
             Density
     
---uMomentum::(Num a, Fractional a)=> Reader (ValSet a) (Equation (Position-> [Term a]))
+uMomentum::(Num a, Fractional a, RealFloat a)=> Reader (ValSet a) (Equation (Position-> [Term a]))
 uMomentum = do
     env <- ask
     return $ let integrate = integUnknown env U
@@ -499,7 +528,7 @@ uMomentum = do
             )
             U
 
---vMomentum::(Num a, Fractional a)=>Reader (ValSet a) (Equation (Position-> [Term a]))
+vMomentum::(Num a, Fractional a, RealFloat a)=> Reader (ValSet a) (Equation (Position-> [Term a]))
 vMomentum = do
     env <- ask
     return $ let integrate = integUnknown env V
@@ -516,7 +545,7 @@ vMomentum = do
             )
             V   
 
---wMomentum::(Num a, Fractional a)=> Reader (ValSet a) (Equation (Position-> [Term a]))
+wMomentum::(Num a, Fractional a, RealFloat a)=> Reader (ValSet a) (Equation (Position-> [Term a]))
 wMomentum =  do
     env <- ask
     return $ let integrate = integUnknown env W 
@@ -533,7 +562,7 @@ wMomentum =  do
             )
             W      
 
---energy::(Num a, Fractional a)=>Reader (ValSet a) (Equation (Position-> [Term a]))
+energy::(Num a, Fractional a, RealFloat a)=> Reader (ValSet a) (Equation (Position-> [Term a]))
 energy =  do
     env <- ask
     return $ let integrate = integUnknown env Temperature
@@ -560,7 +589,7 @@ energy =  do
             )
             Temperature   
 
---gasLawPressure::(Num a, Fractional a)=> Reader (ValSet a) (Equation (Position-> [Term a]))
+gasLawPressure::(Num a, Fractional a)=> Reader (ValSet a) (Equation (Position-> [Term a]))
 gasLawPressure = do
     env <- ask
     return $  
@@ -576,17 +605,16 @@ getDiscEqInstance (Equation l r up) pos = Equation (concatMap (\t -> t pos) l) (
 advanceTime :: Position -> Position
 advanceTime (Position x y z t ) = Position x y z (t+1)    
     
-applyDiffEq :: (Fractional a)=> 
+applyDiffEq :: (Fractional a, NFData a)=> 
     ValSet a -> Equation (Position -> [Term a]) -> Bool-> [ (Position,Property,a,Bool)]    
 applyDiffEq (ValSet p v av sl) eq saveAtNextTime=
-    map
+    runPar $ parMap
         (\pos -> 
             let discEquation = getDiscEqInstance eq pos 
                 solvedProperty = unknownProperty discEquation
                 newValue = solveUnknown (ValSet p v av sl) discEquation pos
-                --newValue = 9198912.312
             in ( pos, solvedProperty, newValue, saveAtNextTime)
-        )  $! p
+        ) p
   
 applyResults ::  [(Position, Property, a,Bool)]-> ValSet a -> ValSet a
 applyResults res (ValSet p v av sl) = 
@@ -602,6 +630,8 @@ applyResults res (ValSet p v av sl) =
             ) v res
     in ValSet (map advanceTime p) newVals av sl
 
+calcSteps :: (Fractional a, RealFloat a)=> 
+    [(Reader (ValSet a) (Equation (Position-> [Term a])) , Bool)]
 calcSteps = [ 
     (gasLawPressure, False) 
     ,(continuity, True)
@@ -610,14 +640,17 @@ calcSteps = [
     ,(wMomentum,  True)
     ,(energy,  True)  ] 
 
+runTimeSteps :: ValSet Double
 runTimeSteps = 
     foldr  
         (\_ prev ->
             let results = 
-                    concatMap 
-                        (\x-> applyDiffEq prev (runReader (fst x) prev) (snd x) )  
-                        calcSteps
-            in applyResults results prev 
+                    runPar $ parMap 
+                        (\x-> applyDiffEq prev (runReader (fst x) prev) (snd x) ) 
+                        calcSteps 
+            in applyResults 
+                (concatMap (\x->x) results) 
+                prev 
         ) initialGrid  [0..55]
 
 testTerms = [Unknown 2.4, Constant 1.2, Constant 3.112, Unknown (-0.21),  SubExpression (Expression [Constant 2, Constant 2, SubExpression (Expression [Unknown 0.33333])])]

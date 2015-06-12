@@ -17,11 +17,11 @@ version :: Version
 version = Version {versionBranch = [0,1], versionTags = []}
 bindir, libdir, datadir, libexecdir, sysconfdir :: FilePath
 
-bindir     = "C:\\Users\\chengyua\\AppData\\Roaming\\cabal\\bin"
-libdir     = "C:\\Users\\chengyua\\AppData\\Roaming\\cabal\\x86_64-windows-ghc-7.8.3\\CFD-0.1"
-datadir    = "C:\\Users\\chengyua\\AppData\\Roaming\\cabal\\x86_64-windows-ghc-7.8.3\\CFD-0.1"
-libexecdir = "C:\\Users\\chengyua\\AppData\\Roaming\\cabal\\CFD-0.1"
-sysconfdir = "C:\\Users\\chengyua\\AppData\\Roaming\\cabal\\etc"
+bindir     = "C:\\Users\\Administrator\\AppData\\Roaming\\cabal\\bin"
+libdir     = "C:\\Users\\Administrator\\AppData\\Roaming\\cabal\\x86_64-windows-ghc-7.8.3\\CFD-0.1"
+datadir    = "C:\\Users\\Administrator\\AppData\\Roaming\\cabal\\x86_64-windows-ghc-7.8.3\\CFD-0.1"
+libexecdir = "C:\\Users\\Administrator\\AppData\\Roaming\\cabal\\CFD-0.1"
+sysconfdir = "C:\\Users\\Administrator\\AppData\\Roaming\\cabal\\etc"
 
 getBinDir, getLibDir, getDataDir, getLibexecDir, getSysconfDir :: IO FilePath
 getBinDir = catchIO (getEnv "CFD_bindir") (\_ -> return bindir)
