@@ -19,6 +19,4 @@ library
                    monad-par >=0.3 && <0.4
   hs-source-dirs:  src
   ghc-options:     -Wall
-  exposed-modules: Main
-  other-modules:   Main
 

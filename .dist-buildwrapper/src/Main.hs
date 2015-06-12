@@ -640,18 +640,15 @@ calcSteps = [
     ,(wMomentum,  True)
     ,(energy,  True)  ] 
 
+runSingleStep _ prev= 
+    let results = 
+            runPar $ parMap 
+                (\x-> applyDiffEq prev (runReader (fst x) prev) (snd x) ) 
+                calcSteps 
+    in applyResults (concatMap (\x->x) results) prev
+                
 runTimeSteps :: ValSet Double
-runTimeSteps = 
-    foldr  
-        (\_ prev ->
-            let results = 
-                    runPar $ parMap 
-                        (\x-> applyDiffEq prev (runReader (fst x) prev) (snd x) ) 
-                        calcSteps 
-            in applyResults 
-                (concatMap (\x->x) results) 
-                prev 
-        ) initialGrid  [0..55]
+runTimeSteps = foldr runSingleStep initialGrid  [0..1]
 
 testTerms = [Unknown 2.4, Constant 1.2, Constant 3.112, Unknown (-0.21),  SubExpression (Expression [Constant 2, Constant 2, SubExpression (Expression [Unknown 0.33333])])]
 
