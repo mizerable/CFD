@@ -9,7 +9,10 @@ executable CFD
   main-is:         Main.hs
   build-depends:   base >= 4
   ghc-options:     -Wall
-  other-modules:   Main
+  other-modules:   
+                   Main,
+                   SolutionDomain,
+                   CalculusUtils
 
 library 
   build-depends:   
@@ -19,4 +22,7 @@ library
                    monad-par >=0.3 && <0.4
   hs-source-dirs:  src
   ghc-options:     -Wall
+  other-modules:   
+                   SolutionDomain,
+                   CalculusUtils
 
