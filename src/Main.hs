@@ -46,6 +46,9 @@ instance Par.NFData Position
 timeStep :: (Num a,Fractional a) => a            
 timeStep = 0.0001
 
+defaultInflow:: (Num a, Fractional a) => a
+defaultInflow = 1
+
 specificHeatCv :: (Num a) => a
 specificHeatCv = 15
 
@@ -86,6 +89,17 @@ d2C d = case d of
     Z -> W
     _ -> undefined
 
+mergeValSets :: (Num a, Fractional a) => ValSet a -> ValSet a-> ValSet a
+mergeValSets modifying base = foldr
+    (\next prev -> 
+        foldr
+            (\n1 p1 -> setVal p1 n1 next $ runReader (prop next n1 Center) modifying) 
+            prev
+            $ calculatedPositions modifying 
+    )
+    base
+    $ enumFrom U
+
 modifyPositionComponent::Position -> Direction -> Int -> Position
 modifyPositionComponent (Position x y z t) direction amt= case direction of 
     X -> Position amt y z t
@@ -125,17 +139,18 @@ prop property position side = do
             useNeighbor = positionIfWall neighbor
             useNeighborEnv = envIfWall neighbor env
             noValError = error ("no value "
-                                ++ (show $ xPos position)++ " "
-                                ++ (show $ yPos position)++ " "
-                                ++ (show $ zPos position)++ " "
-                                ++ (show $ timePos position)++ " "
+                                ++ show (xPos position)++ " "
+                                ++ show (yPos position)++ " "
+                                ++ show (zPos position)++ " "
+                                ++ show (timePos position)++ " "
                                 ++ show property ++ " "
                                 ++ show side)
-            getVal p set = case Map.lookup p set >>= Map.lookup property of
-                Nothing -> case timePos position of
-                    0 -> noValError
-                    _ -> runReader (prop property (offsetPosition position Prev) side) env 
-                Just x -> x
+            getVal p set = fromMaybe
+              (case timePos position of
+                   0 -> noValError
+                   _ -> runReader (prop property (offsetPosition position Prev) side)
+                          env)
+              (Map.lookup p set >>= Map.lookup property)
         in average [ getVal position (vals env), getVal useNeighbor (vals useNeighborEnv)]
         
 removeItems  :: (Ord a, Eq a)=> [a] -> [a]-> [a]
@@ -143,14 +158,17 @@ removeItems orig remove=
     let removeSet = Set.fromList remove
     in filter ( `Set.notMember` removeSet) orig      
 
+wallPositionsVals :: (Num a, Fractional a) => ValSet a
+wallPositionsVals = ValSet [] Map.empty Map.empty Map.empty 
+
 wallPositions :: [Position]
-wallPositions = [] 
+wallPositions = calculatedPositions wallPositionsVals
 
 wallPositionsSet = Set.fromList wallPositions 
 
 initialGrid::(Num a,Fractional a) => ValSet a
 initialGrid= 
-    let p = makePositions
+    let p = makeAllPositions
         vMap = foldr (\next prev -> Map.insert next 
             (case next of 
                 U-> 1
@@ -166,8 +184,9 @@ initialGrid=
         av = foldr (\next prev -> Map.insert next avMap prev) Map.empty p
         sl = foldr (\next prev -> Map.insert next slMap prev) Map.empty p
         calcPos = removeItems p wallPositions
-    in -- ValSet calcPos v av sl
+    in -- ValSet calcPos v av sl        
         setVal (ValSet calcPos v av sl) (Position 5 5 0 0) U 0.0
+        |> mergeValSets wallPositionsVals
 
 setVal:: ValSet a -> Position -> Property -> a -> ValSet a
 setVal (ValSet p v av sl) pos property newVal = 
@@ -177,11 +196,18 @@ setVal (ValSet p v av sl) pos property newVal =
 cartProd:: [[a]] -> [[a]] -> [[a]]
 cartProd xs ys = [ x ++ y | x <- xs, y <- ys]
 
-makePositions::[Position]
-makePositions = 
-    let ranges = enumFrom X |> map maxPos |> map (\x -> [0..x] |> map (:[]))
+inflowPositions::[Position]
+inflowPositions =  ( 0 : enumFrom Y |> map maxPos ) |> makePositions
+
+makeAllPositions::[Position]
+makeAllPositions = enumFrom X |> map maxPos |> makePositions
+         
+makePositions :: [Int] -> [Position]
+makePositions maxes =
+    let ranges = maxes |> map (\x -> [0..x] |> map (:[]))
         posCoords = foldr cartProd [[]] ranges
-    in map (\coords -> Position (coords!!0) (coords!!1) (coords!!2) 0) posCoords
+    in map (\coords -> Position (head coords) (coords!!1) (coords!!2) 0) posCoords
+              
          
 direcDimenType:: Direction -> DimensionType
 direcDimenType direc = case direc of
@@ -267,8 +293,8 @@ approximateDerivative deriv position= case deriv of
             _ -> error "can't approx >1 order derivs. deriv must produce constants" 
     _ -> error "can't approx something that isn't a deriv"
 
-solveUnknown::(Fractional a)=> ValSet a->Equation (Term a)->Position->a
-solveUnknown vs (Equation l r _) position= 
+solveUnknown::(Fractional a)=> Equation (Term a)->Position->a
+solveUnknown (Equation l r _) position= 
     let sumUnknown n p =  p + case n of
             Unknown u-> u
             SubExpression s -> sumExpression sumUnknown $ getTerms s
@@ -607,12 +633,12 @@ advanceTime (Position x y z t ) = Position x y z (t+1)
     
 applyDiffEq :: (Fractional a, NFData a)=> 
     ValSet a -> Equation (Position -> [Term a]) -> Bool-> [ (Position,Property,a,Bool)]    
-applyDiffEq (ValSet p v av sl) eq saveAtNextTime=
+applyDiffEq (ValSet p _ _ _) eq saveAtNextTime=
     runPar $ parMap
         (\pos -> 
             let discEquation = getDiscEqInstance eq pos 
                 solvedProperty = unknownProperty discEquation
-                newValue = solveUnknown (ValSet p v av sl) discEquation pos
+                newValue = solveUnknown discEquation pos
             in ( pos, solvedProperty, newValue, saveAtNextTime)
         ) p
   
@@ -623,9 +649,7 @@ applyResults res (ValSet p v av sl) =
                 let newPos = if saveAtNextTime 
                         then advanceTime pos 
                         else pos
-                    subdict = case Map.lookup newPos prev of
-                        Nothing -> Map.empty
-                        Just d -> d  
+                    subdict = fromMaybe Map.empty (Map.lookup newPos prev)  
                 in Map.insert newPos (Map.insert property newVal subdict) prev
             ) v res
     in ValSet (map advanceTime p) newVals av sl
@@ -645,7 +669,7 @@ runSingleStep _ prev=
             runPar $ parMap 
                 (\x-> applyDiffEq prev (runReader (fst x) prev) (snd x) ) 
                 calcSteps 
-    in applyResults (concatMap (\x->x) results) prev
+    in applyResults (concatMap id results) prev
                 
 runTimeSteps :: ValSet Double
 runTimeSteps = foldr runSingleStep initialGrid  [0..1]
@@ -684,13 +708,13 @@ stringDomain property positions rowLength set =
                 (map (\next -> runReader (prop property next Center) set ) positions )
                 rowLength
                 rowLength
-        strRows = map (\row -> foldr (\next prev -> prev ++ " " ++ show next) "" row ) rows
+        strRows = map (foldr (\ next prev -> prev ++ " " ++ show next) "" ) rows
     in foldr (\next prev -> prev ++ "\n" ++ next ) "" strRows 
             
 main:: IO()
 main = 
     putStrLn "starting ..... "
-    >>= (\_-> print ( solveUnknown initialGrid testEquation $ Position 0 0 0 0)) 
+    >>= (\_-> print ( solveUnknown testEquation $ Position 0 0 0 0)) 
     >>= (\_ -> putStrLn $ writeTerms $ distributeMultiply testTerms 2)
     >>= (\_ -> print $ runReader (prop U testPosition Center ) initialGrid)
     >>= (\_ -> putStrLn " continuity ------------ ")
@@ -698,36 +722,36 @@ main =
     >>= (\_ -> putStrLn " = ")
     >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq continuity)
     >>= (\_ -> putStrLn " solving... ")
-    >>= (\_ -> print $ solveUnknown initialGrid (testEq continuity) testPosition)
+    >>= (\_ -> print $ solveUnknown (testEq continuity) testPosition)
     >>= (\_ -> putStrLn " U Momentum------------ ")
     >>= (\_ -> putStrLn $ writeTerms $ rhs $ testEq uMomentum)
     >>= (\_ -> putStrLn " = ")
     >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq uMomentum)
     >>= (\_ -> putStrLn " solving... ")
-    >>= (\_ -> print $ solveUnknown initialGrid (testEq uMomentum) testPosition)
+    >>= (\_ -> print $ solveUnknown (testEq uMomentum) testPosition)
     >>= (\_ -> putStrLn " V Momentum------------ ")
     >>= (\_ -> putStrLn $ writeTerms $ rhs $ testEq vMomentum)
     >>= (\_ -> putStrLn " = ")
     >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq vMomentum)
     >>= (\_ -> putStrLn " solving... ")
-    >>= (\_ -> print $ solveUnknown initialGrid (testEq vMomentum) testPosition)
+    >>= (\_ -> print $ solveUnknown (testEq vMomentum) testPosition)
     >>= (\_ -> putStrLn " W Momentum------------ ")
     >>= (\_ -> putStrLn $ writeTerms $ rhs $ testEq wMomentum)
     >>= (\_ -> putStrLn " = ")
     >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq wMomentum)
     >>= (\_ -> putStrLn " solving... ")
-    >>= (\_ -> print $ solveUnknown initialGrid (testEq wMomentum) testPosition)
+    >>= (\_ -> print $ solveUnknown (testEq wMomentum) testPosition)
     >>= (\_ -> putStrLn " ENERGY ------------ ")
     >>= (\_ -> putStrLn $ writeTerms $ rhs $ testEq energy)
     >>= (\_ -> putStrLn " = ")
     >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq energy)
     >>= (\_ -> putStrLn " solving... ")
-    >>= (\_ -> print $ solveUnknown initialGrid (testEq energy) testPosition)
+    >>= (\_ -> print $ solveUnknown (testEq energy) testPosition)
     >>= (\_ -> putStrLn " Pressure ------------ ")
     >>= (\_ -> putStrLn $ writeTerms $ rhs $ testEq gasLawPressure)
     >>= (\_ -> putStrLn " = ")
     >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq gasLawPressure)
     >>= (\_ -> putStrLn " solving... ")
-    >>= (\_ -> print $ solveUnknown initialGrid (testEq gasLawPressure) testPosition)    
-    >>= (\_ -> putStrLn $ stringDomain U (calculatedPositions runTimeSteps) (1+maxPos X) runTimeSteps  )
+    >>= (\_ -> print $ solveUnknown (testEq gasLawPressure) testPosition)    
+    -- >>= (\_ -> putStrLn $ stringDomain U (calculatedPositions runTimeSteps) (1+maxPos X) runTimeSteps  )
 
