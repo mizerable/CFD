@@ -14,6 +14,13 @@
   (major1) == 0 && (major2) <  5 || \
   (major1) == 0 && (major2) == 5 && (minor) <= 5)
 
+/* package monad-par-0.3.4.7 */
+#define VERSION_monad_par "0.3.4.7"
+#define MIN_VERSION_monad_par(major1,major2,minor) (\
+  (major1) <  0 || \
+  (major1) == 0 && (major2) <  3 || \
+  (major1) == 0 && (major2) == 3 && (minor) <= 4)
+
 /* package mtl-2.1.3.1 */
 #define VERSION_mtl "2.1.3.1"
 #define MIN_VERSION_mtl(major1,major2,minor) (\
