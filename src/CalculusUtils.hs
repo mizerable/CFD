@@ -17,12 +17,12 @@ specificHeatCv = 15
 sideArea s (Position x y z _) = case s of 
     Now -> 1
     Prev -> 1
-    _ ->fromJust $! (areaVal $! initialGrid) |> Map.lookup (Position x y z 0) >>= Map.lookup s   
+    _ -> fromJust $! Map.lookup (Position x y z 0) (areaVal $! initialGrid)  >>= Map.lookup s    
 
 -- sideLength:: (Num a, Fractional a) => Direction -> Position ->  a
 sideLength d (Position x y z _) = case d of 
     Time -> timeStep
-    _ ->fromJust $! (sideLen $! initialGrid) |> Map.lookup (Position x y z 0) >>= Map.lookup d
+    _ -> fromJust $! Map.lookup (Position x y z 0) (sideLen $! initialGrid) >>= Map.lookup d   
 
 boundaryPair:: Direction -> (Side,Side)
 boundaryPair d = case d of 
@@ -39,7 +39,7 @@ direcDimenType direc = case direc of
 --volumeOrInterval:: (Num a, Fractional a ) => DimensionType -> Position ->a  
 volumeOrInterval dimetype position = case dimetype of
     Temporal -> timeStep
-    Spatial -> enumFrom X |> foldl' (\p d  -> p * sideLength d position ) 1
+    Spatial -> foldl' (\p d  -> p * sideLength d position ) 1 $! enumFrom X 
 
 c2D:: Property -> Direction
 c2D c = case c of
@@ -186,7 +186,7 @@ ddfm_ inner factor multF direction = do
     d<- ask
     return $ Derivative 
         direction 
-        (\_ _ -> runReader inner d |> multTerm factor |> head ) 
+        (\_ _ -> head $! multTerm factor $! runReader inner d  ) 
         Center 
         (\pos side -> runReader (multF pos side) d)
        
@@ -242,10 +242,10 @@ dmeww_dy = d_ [Mew,W] Y
 dmeww_dz = d_ [Mew,W] Z
 
 --divergence:: (Num a, Fractional a) => [Reader (ValSet a) (Term a)] -> [Reader (ValSet a) (Term a)]
-divergence vector = zip vector (enumFrom X) |> map ( uncurry dd_)
+divergence vector = map ( uncurry dd_) $! zip vector (enumFrom X)  
     
 -- gradient:: (Num a, Fractional a) => [Property] -> a-> [Reader (ValSet a) (Term a)]
-gradient properties constantFactor = enumFrom X |> map (df_ properties constantFactor)
+gradient properties constantFactor = map (df_ properties constantFactor) $! enumFrom X  
 
 integrateTerms integrate env =map (\term -> integrateOrder integrate Spatial Temporal [runReader term env] )  
 

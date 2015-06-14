@@ -50,7 +50,7 @@ testEquation =
     Equation 
         --[Unknown 2, Constant 4, Constant (-0.232)]
         [Unknown 2, SubExpression (Expression [Constant 2, Constant 2, Unknown 0.025]), Constant (-0.232)] 
-        ([Constant 2, Constant 3 ] |> addTerms [Unknown (-0.025),Unknown (-0.05)])
+        ( addTerms [Unknown (-0.025),Unknown (-0.05)] $! [Constant 2, Constant 3 ] )
         U
 
 --continuity::(Num a, Fractional a, RealFloat a)=> Reader (ValSet a) (Equation (Position-> [Term a]))
@@ -217,11 +217,11 @@ writeTermsOrig terms =
             Derivative d _ side _-> 
                 "approxDeriv ( " ++ writeTerms [approximateDerivative t testPosition ] 
                     ++ show d ++ " " ++ show  side ++" ) + " 
-    in foldl' writeTerm " " (terms |> reverse)  
+    in foldl' writeTerm " " (reverse terms )  
 
 writeTerms terms =
-    let (_:_:xs) = writeTermsOrig terms |> reverse
-    in xs |> reverse
+    let (_:_:xs) =  reverse $! writeTermsOrig terms 
+    in reverse xs
   
 testPosition =   Position 4 5 0 0
     

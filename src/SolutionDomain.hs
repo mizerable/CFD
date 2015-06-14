@@ -43,8 +43,8 @@ instance Functor Term  where
          Unknown u -> Unknown $ f u
          _ -> undefined    
 
-(|>)::a->(a->b)->b
-(|>) x y = y x
+--(|>)::a->(a->b)->b
+--(|>) x y = y x
 
 maxPos:: Direction -> Int
 maxPos d = case d of 
@@ -96,9 +96,10 @@ initialGrid=
         av = foldl' (\prev next -> Map.insert next avMap $! prev) Map.empty $!  p
         sl = foldl' (\prev next -> Map.insert next slMap $! prev) Map.empty $!  p
         calcPos = removeItems p wallPositions
-    in -- ValSet calcPos v av sl        
+    in -- ValSet calcPos v av sl
+        mergeValSets wallPositionsVals $!        
         setVal (ValSet calcPos v av sl) (Position 5 5 0 0) U 0.0
-        |> mergeValSets wallPositionsVals
+        
 
 setVal:: ValSet a -> Position -> Property -> a -> ValSet a
 setVal (ValSet p v av sl) pos property newVal = 
@@ -109,14 +110,14 @@ cartProd:: [[a]] -> [[a]] -> [[a]]
 cartProd xs ys = [ x ++ y | x <- xs, y <- ys]
 
 inflowPositions::[Position]
-inflowPositions =  ( 0 : enumFrom Y |> map maxPos ) |> makePositions
+inflowPositions =  makePositions $!  0 :  (map maxPos  $! enumFrom Y) 
 
 makeAllPositions::[Position]
-makeAllPositions = enumFrom X |> map maxPos |> makePositions
+makeAllPositions = makePositions $! map maxPos $! enumFrom X 
          
 makePositions :: [Int] -> [Position]
 makePositions maxes =
-    let ranges = maxes |> map (\x -> [0..x] |> map (:[]))
+    let ranges = map (\x -> map (:[]) [0..x] ) maxes 
         posCoords = foldl' cartProd [[]] ranges
     in map (\coords -> Position (head coords) (coords!!1) (coords!!2) 0) posCoords
               
@@ -183,7 +184,7 @@ getPositionComponent (Position x y z t) d = case d of
 
 average::(Num a, Fractional a) => [a]->a
 average terms =
-    let len = length terms |> fromIntegral
+    let len = fromIntegral $! length terms 
         f p n= p + n / len
     in foldl' f 0 terms
 
