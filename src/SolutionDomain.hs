@@ -6,7 +6,6 @@ import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import Data.Maybe
 import Control.Monad.Reader as Reader
---import qualified Data.Foldable as Foldable
 import Data.List
 
 data Side =  Now | Prev |East | West | North | South | Top | Bottom | Center deriving (Show,Eq,Ord, Enum)
@@ -64,7 +63,7 @@ positionIfWall (Position x y z t) = if Set.member (Position x y z 0) wallPositio
     else Position x y z t
     
 envIfWall (Position x y z _) env = if Set.member (Position x y z 0) wallPositionsSet
-    then initialGrid
+    then id $! initialGrid
     else env       
            
 wallPositionsVals :: (Num a, Fractional a) => ValSet a
@@ -79,7 +78,7 @@ wallPositions = calculatedPositions wallPositionsVals
 wallPositionsSet :: Set.Set Position
 wallPositionsSet = Set.fromList wallPositions 
 
-initialGrid::(Num a,Fractional a) => ValSet a
+initialGrid:: ValSet Double 
 initialGrid= 
     let p = makeAllPositions
         vMap = foldl' (\prev next -> Map.insert next 
@@ -91,11 +90,11 @@ initialGrid=
                 _-> 1
                 ) 
             prev) Map.empty (enumFrom U)
-        avMap = foldl' (\prev next -> Map.insert next 1 prev) Map.empty (enumFrom East)
-        slMap = foldl' (\prev next -> Map.insert next 1 prev) Map.empty (enumFrom X)
-        v = foldl' (\prev next -> Map.insert next vMap prev) Map.empty p
-        av = foldl' (\prev next -> Map.insert next avMap prev) Map.empty p
-        sl = foldl' (\prev next -> Map.insert next slMap prev) Map.empty p
+        avMap = foldl' (\prev next -> Map.insert next 1 $! prev) Map.empty $!  (enumFrom East)
+        slMap = foldl' (\prev next -> Map.insert next 1 $! prev) Map.empty $! (enumFrom X)
+        v = foldl' (\prev next -> Map.insert next vMap $! prev) Map.empty  $!  p
+        av = foldl' (\prev next -> Map.insert next avMap $! prev) Map.empty $!  p
+        sl = foldl' (\prev next -> Map.insert next slMap $! prev) Map.empty $!  p
         calcPos = removeItems p wallPositions
     in -- ValSet calcPos v av sl        
         setVal (ValSet calcPos v av sl) (Position 5 5 0 0) U 0.0

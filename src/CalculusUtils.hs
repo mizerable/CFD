@@ -4,7 +4,7 @@ import SolutionDomain
 import Data.Maybe
 import qualified Data.Map.Strict as Map
 import Control.Monad.Reader as Reader
-import qualified Data.Foldable as Foldable 
+import Data.List
 
 
 timeStep :: (Num a,Fractional a) => a            
@@ -17,12 +17,12 @@ sideArea:: (Num a, Fractional a)=>Side -> Position -> a
 sideArea s (Position x y z _) = case s of 
     Now -> 1
     Prev -> 1
-    _ ->fromJust $ areaVal initialGrid |> Map.lookup (Position x y z 0) >>= Map.lookup s   
+    _ ->fromJust $! (areaVal $! initialGrid) |> Map.lookup (Position x y z 0) >>= Map.lookup s   
 
 sideLength:: (Num a, Fractional a) => Direction -> Position ->  a
 sideLength d (Position x y z _) = case d of 
     Time -> timeStep
-    _ ->fromJust $ sideLen initialGrid |> Map.lookup (Position x y z 0) >>= Map.lookup d
+    _ ->fromJust $! (sideLen $! initialGrid) |> Map.lookup (Position x y z 0) >>= Map.lookup d
 
 boundaryPair:: Direction -> (Side,Side)
 boundaryPair d = case d of 
@@ -39,7 +39,7 @@ direcDimenType direc = case direc of
 volumeOrInterval:: (Num a, Fractional a ) => DimensionType -> Position ->a  
 volumeOrInterval dimetype position = case dimetype of
     Temporal -> timeStep
-    Spatial -> enumFrom X |> Foldable.foldl' (\p d  -> p * sideLength d position ) 1
+    Spatial -> enumFrom X |> foldl' (\p d  -> p * sideLength d position ) 1
 
 c2D:: Property -> Direction
 c2D c = case c of
@@ -87,7 +87,7 @@ solveUnknown (Equation l r _) position=
                 [approximateDerivative n $! position]  
             SubExpression s -> sumExpression sumConstants $! getTerms s
             _ -> 0
-        sumExpression s = Foldable.foldl' s 0
+        sumExpression s = foldl' s 0
         lhsUnknown = sumExpression sumUnknown l
         rhsUnknown = sumExpression sumUnknown r
         lhsConstants = sumExpression sumConstants l
@@ -262,7 +262,7 @@ integrateOrder integrate i1 i2 term = integrate i1 term >>= integrate i2
         
 multProps ::(Num a, Fractional a)=> [Property] ->Position ->Side -> Reader (ValSet a) a
 multProps = 
-    Foldable.foldl' 
+    foldl' 
         (\prev next pos side->
             do
                 vs <- ask

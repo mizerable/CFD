@@ -7,7 +7,6 @@ import Control.Monad.Reader as Reader
 -- import Control.Monad.Par as Par
 import SolutionDomain
 import CalculusUtils
---import qualified Data.Foldable as Foldable
 import Data.List
 
 -- instance Par.NFData Property 
@@ -153,7 +152,7 @@ gasLawPressure = do
             Pressure          
     
 getDiscEqInstance:: Equation (Position -> [Term a]) -> Position -> Equation (Term a)
-getDiscEqInstance (Equation l r up) pos = Equation (concatMap (\t -> t pos) l) (concatMap (\t -> t pos) r) up
+getDiscEqInstance (Equation l r up) pos = Equation (concatMap (\t -> t pos) $! l) (concatMap (\t -> t pos) $! r) up
     
 advanceTime :: Position -> Position
 advanceTime (Position x y z t ) = Position x y z (t+1)    
@@ -203,12 +202,12 @@ runSingleStep prev _ =
     in applyResults (concatMap id results) prev
                 
 runTimeSteps :: ValSet Double
-runTimeSteps = foldl'  runSingleStep initialGrid [0..0] 
+runTimeSteps = (\x -> foldl'  runSingleStep x [0..0] ) $! initialGrid  
  
 testTerms = [Unknown 2.4, Constant 1.2, Constant 3.112, Unknown (-0.21),  SubExpression (Expression [Constant 2, Constant 2, SubExpression (Expression [Unknown 0.33333])])]
 
 testEq:: (Num a, Fractional a)=> Reader (ValSet a ) (Equation (Position ->[Term a])) -> Equation (Term a)
-testEq eq = getDiscEqInstance ( runReader eq initialGrid) testPosition 
+testEq eq = getDiscEqInstance ( runReader eq $! initialGrid) testPosition 
             
 writeTermsOrig:: (Num a, Show a, Fractional a)=> [Term a] -> String
 writeTermsOrig terms =
