@@ -9,8 +9,8 @@ import SolutionDomain
 import CalculusUtils
 import Data.List
 
--- instance Par.NFData Property 
--- instance Par.NFData Position
+--instance Par.NFData Property 
+--instance Par.NFData Position
 
 defaultInflow:: (Num a, Fractional a) => a
 defaultInflow = 1
@@ -159,10 +159,9 @@ getDiscEqInstance (Equation l r up) pos = Equation (concatMap (\t -> t pos) $! l
 advanceTime :: Position -> Position
 advanceTime (Position x y z t ) = Position x y z (t+1)    
     
---applyDiffEq :: (Fractional a, NFData a)=>
--- applyDiffEq :: (Fractional a)=>    ValSet a -> Equation (Position -> [Term a]) -> Bool-> [ (Position,Property,a,Bool)]    
+--applyDiffEq :: (Fractional a, NFData a)=> ValSet a -> Equation (Position -> [Term a]) -> Bool-> [ (Position,Property,a,Bool)]    
 applyDiffEq (ValSet p _ _ _) eq saveAtNextTime=
-    -- runPar $ parMap
+    --runPar $ parMap
     map
         (\pos -> 
             let discEquation = getDiscEqInstance eq pos 
@@ -195,7 +194,7 @@ calcSteps = [
 
 runSingleStep prev _ = 
     let results = 
-            -- runPar $ parMap 
+            --runPar $ parMap 
             map
                 (\x-> applyDiffEq prev (runReader (fst x) prev) (snd x) ) 
                 calcSteps 

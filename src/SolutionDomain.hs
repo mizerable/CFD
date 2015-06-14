@@ -194,16 +194,17 @@ prop property position side = do
         let neighbor = offsetPosition position side
             useNeighbor = positionIfWall neighbor
             useNeighborEnv = envIfWall neighbor env
-            noValError = error ("no value "
-                                ++ show (xPos position)++ " "
-                                ++ show (yPos position)++ " "
-                                ++ show (zPos position)++ " "
-                                ++ show (timePos position)++ " "
-                                ++ show property ++ " "
-                                ++ show side)
+            --noValError = error ("no value "
+              --                  ++ show (xPos position)++ " "
+              --                  ++ show (yPos position)++ " "
+              --                  ++ show (zPos position)++ " "
+              --                  ++ show (timePos position)++ " "
+              --                  ++ show property ++ " "
+              --                  ++ show side)
+            getVal:: Position -> (Map.Map Position (Map.Map Property Double )) -> Double
             getVal p set = fromMaybe
               (case timePos position of
-                   0 -> noValError
+                   0 -> 0.0
                    _ -> runReader (prop property (offsetPosition position Prev) side)
                           env)
               (Map.lookup p set >>= Map.lookup property)
