@@ -78,7 +78,7 @@ wallPositions = calculatedPositions wallPositionsVals
 wallPositionsSet :: Set.Set Position
 wallPositionsSet = Set.fromList wallPositions 
 
-initialGrid:: ValSet Double 
+initialGrid:: ValSet Double
 initialGrid= 
     let p = makeAllPositions
         vMap = foldl' (\prev next -> Map.insert next 
@@ -120,7 +120,7 @@ makePositions maxes =
         posCoords = foldl' cartProd [[]] ranges
     in map (\coords -> Position (head coords) (coords!!1) (coords!!2) 0) posCoords
               
-mergeValSets :: (Num a, Fractional a) => ValSet a -> ValSet a-> ValSet a
+--mergeValSets :: (Num a, Fractional a) => ValSet a -> ValSet a-> ValSet a
 mergeValSets modifying base = foldl'
     (\prev next-> 
         foldl'
@@ -187,7 +187,7 @@ average terms =
         f p n= p + n / len
     in foldl' f 0 terms
 
-prop::(Num a, Fractional a)=> Property->Position->Side-> Reader (ValSet a) a
+--prop::(Num a, Fractional a)=> Property->Position->Side-> Reader (ValSet a) a
 prop property position side = do
     env <- ask 
     return $! 

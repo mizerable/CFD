@@ -53,7 +53,8 @@ testEquation =
         ([Constant 2, Constant 3 ] |> addTerms [Unknown (-0.025),Unknown (-0.05)])
         U
 
-continuity::(Num a, Fractional a, RealFloat a)=> Reader (ValSet a) (Equation (Position-> [Term a]))
+--continuity::(Num a, Fractional a, RealFloat a)=> Reader (ValSet a) (Equation (Position-> [Term a]))
+continuity::Reader (ValSet Double) (Equation (Position-> [Term Double]))
 continuity = do
     env <- ask
     return $ let integrate = integUnknown env Density 
@@ -63,7 +64,8 @@ continuity = do
             [ const [Constant 0]] 
             Density
     
-uMomentum::(Num a, Fractional a, RealFloat a)=> Reader (ValSet a) (Equation (Position-> [Term a]))
+--uMomentum::(Num a, Fractional a, RealFloat a)=> Reader (ValSet a) (Equation (Position-> [Term a]))
+uMomentum::Reader (ValSet Double) (Equation (Position-> [Term Double]))
 uMomentum = do
     env <- ask
     return $ let integrate = integUnknown env U
@@ -80,7 +82,7 @@ uMomentum = do
             )
             U
 
-vMomentum::(Num a, Fractional a, RealFloat a)=> Reader (ValSet a) (Equation (Position-> [Term a]))
+vMomentum::Reader (ValSet Double) (Equation (Position-> [Term Double]))
 vMomentum = do
     env <- ask
     return $ let integrate = integUnknown env V
@@ -97,7 +99,7 @@ vMomentum = do
             )
             V   
 
-wMomentum::(Num a, Fractional a, RealFloat a)=> Reader (ValSet a) (Equation (Position-> [Term a]))
+wMomentum::Reader (ValSet Double) (Equation (Position-> [Term Double]))
 wMomentum =  do
     env <- ask
     return $ let integrate = integUnknown env W 
@@ -114,7 +116,7 @@ wMomentum =  do
             )
             W      
 
-energy::(Num a, Fractional a, RealFloat a)=> Reader (ValSet a) (Equation (Position-> [Term a]))
+energy::Reader (ValSet Double) (Equation (Position-> [Term Double]))
 energy =  do
     env <- ask
     return $ let integrate = integUnknown env Temperature
@@ -141,7 +143,7 @@ energy =  do
             )
             Temperature   
 
-gasLawPressure::(Num a, Fractional a)=> Reader (ValSet a) (Equation (Position-> [Term a]))
+gasLawPressure::Reader (ValSet Double) (Equation (Position-> [Term Double]))
 gasLawPressure = do
     env <- ask
     return $  
@@ -158,8 +160,7 @@ advanceTime :: Position -> Position
 advanceTime (Position x y z t ) = Position x y z (t+1)    
     
 --applyDiffEq :: (Fractional a, NFData a)=>
-applyDiffEq :: (Fractional a)=> 
-    ValSet a -> Equation (Position -> [Term a]) -> Bool-> [ (Position,Property,a,Bool)]    
+-- applyDiffEq :: (Fractional a)=>    ValSet a -> Equation (Position -> [Term a]) -> Bool-> [ (Position,Property,a,Bool)]    
 applyDiffEq (ValSet p _ _ _) eq saveAtNextTime=
     -- runPar $ parMap
     map
@@ -182,8 +183,7 @@ applyResults res (ValSet p v av sl) =
             ) v res
     in ValSet (map advanceTime p) newVals av sl
 
-calcSteps :: (Fractional a, RealFloat a)=> 
-    [(Reader (ValSet a) (Equation (Position-> [Term a])) , Bool)]
+-- calcSteps :: (Fractional a, RealFloat a)=>  [(Reader (ValSet a) (Equation (Position-> [Term a])) , Bool)]
 calcSteps = [ 
     (gasLawPressure, False) 
     ,(continuity, True)
@@ -206,10 +206,10 @@ runTimeSteps = (\x -> foldl'  runSingleStep x [0..0] ) $! initialGrid
  
 testTerms = [Unknown 2.4, Constant 1.2, Constant 3.112, Unknown (-0.21),  SubExpression (Expression [Constant 2, Constant 2, SubExpression (Expression [Unknown 0.33333])])]
 
-testEq:: (Num a, Fractional a)=> Reader (ValSet a ) (Equation (Position ->[Term a])) -> Equation (Term a)
+--testEq:: (Num a, Fractional a)=> Reader (ValSet a ) (Equation (Position ->[Term a])) -> Equation (Term a)
 testEq eq = getDiscEqInstance ( runReader eq $! initialGrid) testPosition 
             
-writeTermsOrig:: (Num a, Show a, Fractional a)=> [Term a] -> String
+--writeTermsOrig:: (Num a, Show a, Fractional a)=> [Term a] -> String
 writeTermsOrig terms =
     let writeTerm prev t= prev ++ case t of
             Unknown u -> show u ++ "X + "
@@ -231,7 +231,7 @@ makeRows whole curr [] _ _ = whole ++ [curr]
 makeRows whole curr items 0 width = makeRows (whole ++ [curr] ) [] items width width          
 makeRows whole curr (x:xs) r width= makeRows whole (curr++[x]) xs (r-1) width   
              
-stringDomain:: (Num a, Fractional a, Show a ) => Property ->[Position]->Int-> ValSet a -> String
+--stringDomain:: (Num a, Fractional a, Show a ) => Property ->[Position]->Int-> ValSet a -> String
 stringDomain property positions rowLength set =
     let rows = 
             makeRows [[]] [] 

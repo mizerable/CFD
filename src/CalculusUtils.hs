@@ -13,13 +13,13 @@ timeStep = 0.0001
 specificHeatCv :: (Num a) => a
 specificHeatCv = 15
 
-sideArea:: (Num a, Fractional a)=>Side -> Position -> a
+-- sideArea:: (Num a, Fractional a)=>Side -> Position -> a
 sideArea s (Position x y z _) = case s of 
     Now -> 1
     Prev -> 1
     _ ->fromJust $! (areaVal $! initialGrid) |> Map.lookup (Position x y z 0) >>= Map.lookup s   
 
-sideLength:: (Num a, Fractional a) => Direction -> Position ->  a
+-- sideLength:: (Num a, Fractional a) => Direction -> Position ->  a
 sideLength d (Position x y z _) = case d of 
     Time -> timeStep
     _ ->fromJust $! (sideLen $! initialGrid) |> Map.lookup (Position x y z 0) >>= Map.lookup d
@@ -36,7 +36,7 @@ direcDimenType direc = case direc of
     Time -> Temporal
     _ -> Spatial
 
-volumeOrInterval:: (Num a, Fractional a ) => DimensionType -> Position ->a  
+--volumeOrInterval:: (Num a, Fractional a ) => DimensionType -> Position ->a  
 volumeOrInterval dimetype position = case dimetype of
     Temporal -> timeStep
     Spatial -> enumFrom X |> foldl' (\p d  -> p * sideLength d position ) 1
@@ -55,7 +55,7 @@ d2C d = case d of
     Z -> W
     _ -> undefined
 
-approximateDerivative::(Num a, Fractional a)=>  Term a -> Position-> Term a
+-- approximateDerivative::(Num a, Fractional a)=>  Term a -> Position-> Term a
 approximateDerivative deriv position= case deriv of 
     (Derivative direction func side m) ->
         let neighbor = offsetPosition position side
@@ -75,7 +75,7 @@ approximateDerivative deriv position= case deriv of
             _ -> error "can't approx >1 order derivs. deriv must produce constants" 
     _ -> error "can't approx something that isn't a deriv"
 
-solveUnknown::(Fractional a)=> Equation (Term a)->Position->a
+--solveUnknown::(Fractional a)=> Equation (Term a)->Position->a
 solveUnknown (Equation l r _) position= 
     let sumUnknown p n =  p + case n of
             Unknown u-> u
@@ -105,8 +105,7 @@ multTerm m term  = case term of
         in [Derivative direc modf side multF]
     _-> [fmap (*m) term]
                 
-integSurface:: (Num a,Fractional a, RealFloat a)=> 
-    (Side->Term a) -> Position -> Direction ->Property-> Reader (ValSet a) [Term a]
+--integSurface:: (Num a,Fractional a, RealFloat a)=> (Side->Term a) -> Position -> Direction ->Property-> Reader (ValSet a) [Term a]
 integSurface f position direction unknownProp= do
     vs <- ask
     return $ 
@@ -132,8 +131,7 @@ integSurface f position direction unknownProp= do
                         else fmap (* sideAreaVal) term
         in [value (fst sides) True , value (snd sides) False]       
        
-integSingleTerm::  (Num a, Fractional a, RealFloat a ) =>
-    Term a -> DimensionType -> Position -> Property ->Reader (ValSet a) [Term a]
+--integSingleTerm::  (Num a, Fractional a, RealFloat a ) =>  Term a -> DimensionType -> Position -> Property ->Reader (ValSet a) [Term a]
 integSingleTerm term dimetype cellposition unknownProp=  do
     vs <- ask
     return $
@@ -155,8 +153,7 @@ integSingleTerm term dimetype cellposition unknownProp=  do
                 else nonDerivAnswer
             _ -> nonDerivAnswer    
 
-integ::  (Num a, Fractional a, RealFloat a ) => 
-    ValSet a-> DimensionType -> [Term a] ->Position ->Reader Property [Term a]
+--integ::  (Num a, Fractional a, RealFloat a ) => ValSet a-> DimensionType -> [Term a] ->Position ->Reader Property [Term a]
 integ vs dimetype terms cellposition = do
     unknownProp <- ask
     return $ case terms of
@@ -165,10 +162,11 @@ integ vs dimetype terms cellposition = do
             (integSingleTerm x dimetype cellposition unknownProp) vs 
             ++ runReader (integ vs dimetype xs cellposition) unknownProp   
 
-d_:: (Fractional a) => [Property]-> Direction -> Reader (ValSet a) (Term a)
+--d_:: (Fractional a) => [Property]-> Direction -> Reader (ValSet a) (Term a)
 d_ properties = df_ properties 1 
 
-df_ :: (Num a,Fractional a) => [Property]-> a ->Direction -> Reader (ValSet a) (Term a)      
+-- df_ :: (Num a,Fractional a) => [Property]-> a ->Direction -> Reader (ValSet a) (Term a)
+df_ :: [Property]-> Double ->Direction -> Reader (ValSet Double) (Term Double)      
 df_ properties factor = dfm_ properties factor (\_ _ -> 1)         
 
 dfm_ properties factor multF direction = do
@@ -192,61 +190,61 @@ ddfm_ inner factor multF direction = do
         Center 
         (\pos side -> runReader (multF pos side) d)
        
-drho_dt:: (Fractional a) => Reader (ValSet a) (Term a)        
+--drho_dt:: (Fractional a) => Reader (ValSet a) (Term a)        
 drho_dt = d_ [Density] Time
 
-dp_dx:: (Fractional a) => Reader (ValSet a) (Term a)
+--dp_dx:: (Fractional a) => Reader (ValSet a) (Term a)
 dp_dx = d_ [Pressure] X
 
-dp_dy:: (Fractional a) => Reader (ValSet a) (Term a)
+--dp_dy:: (Fractional a) => Reader (ValSet a) (Term a)
 dp_dy = d_ [Pressure] Y
 
-dp_dz:: (Fractional a) => Reader (ValSet a) (Term a)
+--dp_dz:: (Fractional a) => Reader (ValSet a) (Term a)
 dp_dz = d_ [Pressure] Z
 
-drhou_dt:: (Fractional a) => Reader (ValSet a) (Term a)
+--drhou_dt:: (Fractional a) => Reader (ValSet a) (Term a)
 drhou_dt =d_ [Density, U] Time   
 
-drhov_dt:: (Fractional a) => Reader (ValSet a) (Term a)
+--drhov_dt:: (Fractional a) => Reader (ValSet a) (Term a)
 drhov_dt =d_ [Density, V] Time
 
-drhow_dt:: (Fractional a) => Reader (ValSet a) (Term a)
+--drhow_dt:: (Fractional a) => Reader (ValSet a) (Term a)
 drhow_dt =d_ [Density, W] Time
 
-drhoT_dt:: (Fractional a) => Reader (ValSet a) (Term a)
+--drhoT_dt:: (Fractional a) => Reader (ValSet a) (Term a)
 drhoT_dt = df_ [Density, Temperature] specificHeatCv Time 
 
-dmewu_dx:: (Fractional a) => Reader (ValSet a) (Term a)
+--dmewu_dx:: (Fractional a) => Reader (ValSet a) (Term a)
 dmewu_dx = d_ [Mew, U] X
 
-dmewu_dy:: (Fractional a) => Reader (ValSet a) (Term a)
+--dmewu_dy:: (Fractional a) => Reader (ValSet a) (Term a)
 dmewu_dy = d_ [Mew, U] Y
 
-dmewu_dz:: (Fractional a) => Reader (ValSet a) (Term a)
+--dmewu_dz:: (Fractional a) => Reader (ValSet a) (Term a)
 dmewu_dz = d_ [Mew, U] Z
 
-dmewv_dx:: (Fractional a) => Reader (ValSet a) (Term a)
+--dmewv_dx:: (Fractional a) => Reader (ValSet a) (Term a)
 dmewv_dx = d_ [Mew, V] X
 
-dmeww_dx:: (Fractional a) => Reader (ValSet a) (Term a)
+--dmeww_dx:: (Fractional a) => Reader (ValSet a) (Term a)
 dmeww_dx = d_ [Mew, W] X
 
-dmewv_dy:: (Fractional a) => Reader (ValSet a) (Term a)
+--dmewv_dy:: (Fractional a) => Reader (ValSet a) (Term a)
 dmewv_dy = d_ [Mew,V] Y
 
-dmewv_dz:: (Fractional a) => Reader (ValSet a) (Term a)
+--dmewv_dz:: (Fractional a) => Reader (ValSet a) (Term a)
 dmewv_dz = d_ [Mew,V] Z
 
-dmeww_dy:: (Fractional a) => Reader (ValSet a) (Term a)
+--dmeww_dy:: (Fractional a) => Reader (ValSet a) (Term a)
 dmeww_dy = d_ [Mew,W] Y
 
-dmeww_dz:: (Fractional a) => Reader (ValSet a) (Term a)
+--dmeww_dz:: (Fractional a) => Reader (ValSet a) (Term a)
 dmeww_dz = d_ [Mew,W] Z
 
-divergence:: (Num a, Fractional a) => [Reader (ValSet a) (Term a)] -> [Reader (ValSet a) (Term a)]
+--divergence:: (Num a, Fractional a) => [Reader (ValSet a) (Term a)] -> [Reader (ValSet a) (Term a)]
 divergence vector = zip vector (enumFrom X) |> map ( uncurry dd_)
     
-gradient:: (Num a, Fractional a) => [Property] -> a-> [Reader (ValSet a) (Term a)]
+-- gradient:: (Num a, Fractional a) => [Property] -> a-> [Reader (ValSet a) (Term a)]
 gradient properties constantFactor = enumFrom X |> map (df_ properties constantFactor)
 
 integrateTerms integrate env =map (\term -> integrateOrder integrate Spatial Temporal [runReader term env] )  
@@ -260,7 +258,7 @@ divGrad properties constantFactor = divergence $ gradient properties constantFac
 
 integrateOrder integrate i1 i2 term = integrate i1 term >>= integrate i2
         
-multProps ::(Num a, Fractional a)=> [Property] ->Position ->Side -> Reader (ValSet a) a
+-- multProps ::(Num a, Fractional a)=> [Property] ->Position ->Side -> Reader (ValSet a) a
 multProps = 
     foldl' 
         (\prev next pos side->
@@ -269,14 +267,13 @@ multProps =
                 return $ runReader (prev pos side) vs * runReader (prop next pos side) vs)         
         (\_ _ -> return 1) 
                 
-squareDerivative:: (Num a, Fractional a) => [Property] -> a->Direction -> [Reader (ValSet a) (Term a)]        
+-- squareDerivative:: (Num a, Fractional a) => [Property] -> a->Direction -> [Reader (ValSet a) (Term a)]        
 squareDerivative properties constantFactor direction = 
     let foldedProps = multProps properties
     in [ ddf_ (d_ (properties++properties) direction) (constantFactor/2) direction
         ,ddfm_ (d_ properties direction) (constantFactor * (-1)) foldedProps direction] 
 
-pairedMultipliedDerivatives :: (Num a, Fractional a) =>
-     [Property] -> [Property] -> Direction -> Direction -> [Reader (ValSet a) (Term a)]
+--pairedMultipliedDerivatives :: (Num a, Fractional a) =>  [Property] -> [Property] -> Direction -> Direction -> [Reader (ValSet a) (Term a)]
 pairedMultipliedDerivatives props1 props2 dir1 dir2 = 
     let p1 = multProps props1 
         p2 = multProps props2
