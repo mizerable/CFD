@@ -1,9 +1,13 @@
+
+{-# LANGUAGE BangPatterns #-}
 module SolutionDomain where
 
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import Data.Maybe
 import Control.Monad.Reader as Reader
+--import qualified Data.Foldable as Foldable
+import Data.List
 
 data Side =  Now | Prev |East | West | North | South | Top | Bottom | Center deriving (Show,Eq,Ord, Enum)
 
@@ -11,28 +15,28 @@ data Side =  Now | Prev |East | West | North | South | Top | Bottom | Center der
 data Direction = Time | X | Y | Z deriving (Enum,Ord,Eq,Show)
 data DimensionType = Temporal | Spatial deriving ( Eq)
 data Equation a = Equation{
-    lhs::[a]
-    ,rhs::[a]
-    ,unknownProperty::Property}    
+    lhs:: ![a]
+    ,rhs:: ![a]
+    ,unknownProperty:: !Property}    
 data IntegralType = Body | Surface deriving (Eq)
 data Property = U | V | W | Density | Temperature | Mew | Pressure deriving (Ord,Eq,Enum,Show)
 data Position = Position {
-    xPos::Int
-    ,yPos::Int
-    ,zPos::Int
-    ,timePos::Int } deriving (Eq, Ord, Show)
+    xPos:: !Int
+    ,yPos:: !Int
+    ,zPos:: !Int
+    ,timePos:: !Int } deriving (Eq, Ord, Show)
 data ValSet a = ValSet{
-    calculatedPositions:: [Position]
-    ,vals:: Map.Map Position (Map.Map Property a)
-    ,areaVal::Map.Map Position (Map.Map Side a)
-    ,sideLen:: Map.Map Position (Map.Map Direction a) }
-data Expression a = Expression{getTerms::[Term a]} 
+    calculatedPositions:: ![Position]
+    ,vals:: !(Map.Map Position (Map.Map Property a))
+    ,areaVal:: !(Map.Map Position (Map.Map Side a))
+    ,sideLen:: !(Map.Map Position (Map.Map Direction a)) }
+data Expression a = Expression{getTerms:: ![Term a]} 
 data Term a = 
-    Constant {val::a}
-    | Unknown { coeff::a }
-    | SubExpression {expression::Expression a}  
-    | Derivative { denom::Direction ,function:: Position->Side->Term a, centered::Side, 
-        multiplier:: Position->Side-> a } 
+    Constant {val:: !a}
+    | Unknown { coeff:: !a }
+    | SubExpression {expression:: !(Expression a) }  
+    | Derivative { denom:: !Direction ,function:: !(Position->Side->Term a), centered:: !Side, 
+        multiplier:: !(Position->Side-> a) } 
         
 instance Functor Term  where
     fmap f x = case x of
@@ -45,8 +49,8 @@ instance Functor Term  where
 
 maxPos:: Direction -> Int
 maxPos d = case d of 
-    X -> 18
-    Y -> 18
+    X -> 15
+    Y -> 15
     Z -> 0
     Time -> undefined
 
@@ -64,17 +68,21 @@ envIfWall (Position x y z _) env = if Set.member (Position x y z 0) wallPosition
     else env       
            
 wallPositionsVals :: (Num a, Fractional a) => ValSet a
-wallPositionsVals = ValSet [] Map.empty Map.empty Map.empty 
+wallPositionsVals = ValSet 
+     [] --inflowPositions
+     Map.empty 
+     Map.empty Map.empty 
 
 wallPositions :: [Position]
 wallPositions = calculatedPositions wallPositionsVals
 
+wallPositionsSet :: Set.Set Position
 wallPositionsSet = Set.fromList wallPositions 
 
 initialGrid::(Num a,Fractional a) => ValSet a
 initialGrid= 
     let p = makeAllPositions
-        vMap = foldr (\next prev -> Map.insert next 
+        vMap = foldl' (\prev next -> Map.insert next 
             (case next of 
                 U-> 1
                 V-> 0
@@ -83,11 +91,11 @@ initialGrid=
                 _-> 1
                 ) 
             prev) Map.empty (enumFrom U)
-        avMap = foldr (\next prev -> Map.insert next 1 prev) Map.empty (enumFrom East)
-        slMap = foldr (\next prev -> Map.insert next 1 prev) Map.empty (enumFrom X)
-        v = foldr (\next prev -> Map.insert next vMap prev) Map.empty p
-        av = foldr (\next prev -> Map.insert next avMap prev) Map.empty p
-        sl = foldr (\next prev -> Map.insert next slMap prev) Map.empty p
+        avMap = foldl' (\prev next -> Map.insert next 1 prev) Map.empty (enumFrom East)
+        slMap = foldl' (\prev next -> Map.insert next 1 prev) Map.empty (enumFrom X)
+        v = foldl' (\prev next -> Map.insert next vMap prev) Map.empty p
+        av = foldl' (\prev next -> Map.insert next avMap prev) Map.empty p
+        sl = foldl' (\prev next -> Map.insert next slMap prev) Map.empty p
         calcPos = removeItems p wallPositions
     in -- ValSet calcPos v av sl        
         setVal (ValSet calcPos v av sl) (Position 5 5 0 0) U 0.0
@@ -110,14 +118,14 @@ makeAllPositions = enumFrom X |> map maxPos |> makePositions
 makePositions :: [Int] -> [Position]
 makePositions maxes =
     let ranges = maxes |> map (\x -> [0..x] |> map (:[]))
-        posCoords = foldr cartProd [[]] ranges
+        posCoords = foldl' cartProd [[]] ranges
     in map (\coords -> Position (head coords) (coords!!1) (coords!!2) 0) posCoords
               
 mergeValSets :: (Num a, Fractional a) => ValSet a -> ValSet a-> ValSet a
-mergeValSets modifying base = foldr
-    (\next prev -> 
-        foldr
-            (\n1 p1 -> setVal p1 n1 next $ runReader (prop next n1 Center) modifying) 
+mergeValSets modifying base = foldl'
+    (\prev next-> 
+        foldl'
+            (\p1 n1-> setVal p1 n1 next $ runReader (prop next n1 Center) modifying) 
             prev
             $ calculatedPositions modifying 
     )
@@ -177,13 +185,13 @@ getPositionComponent (Position x y z t) d = case d of
 average::(Num a, Fractional a) => [a]->a
 average terms =
     let len = length terms |> fromIntegral
-        f n p = p + n / len
-    in foldr f 0 terms
+        f p n= p + n / len
+    in foldl' f 0 terms
 
 prop::(Num a, Fractional a)=> Property->Position->Side-> Reader (ValSet a) a
 prop property position side = do
     env <- ask 
-    return $ 
+    return $! 
         let neighbor = offsetPosition position side
             useNeighbor = positionIfWall neighbor
             useNeighborEnv = envIfWall neighbor env

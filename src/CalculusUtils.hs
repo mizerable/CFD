@@ -2,8 +2,10 @@ module CalculusUtils where
 
 import SolutionDomain
 import Data.Maybe
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
 import Control.Monad.Reader as Reader
+import qualified Data.Foldable as Foldable 
+
 
 timeStep :: (Num a,Fractional a) => a            
 timeStep = 0.0001
@@ -37,7 +39,7 @@ direcDimenType direc = case direc of
 volumeOrInterval:: (Num a, Fractional a ) => DimensionType -> Position ->a  
 volumeOrInterval dimetype position = case dimetype of
     Temporal -> timeStep
-    Spatial -> enumFrom X |> foldr (\d p -> p * sideLength d position ) 1
+    Spatial -> enumFrom X |> Foldable.foldl' (\p d  -> p * sideLength d position ) 1
 
 c2D:: Property -> Direction
 c2D c = case c of
@@ -75,17 +77,17 @@ approximateDerivative deriv position= case deriv of
 
 solveUnknown::(Fractional a)=> Equation (Term a)->Position->a
 solveUnknown (Equation l r _) position= 
-    let sumUnknown n p =  p + case n of
+    let sumUnknown p n =  p + case n of
             Unknown u-> u
-            SubExpression s -> sumExpression sumUnknown $ getTerms s
+            SubExpression s -> sumExpression sumUnknown $! getTerms s
             _ -> 0
-        sumConstants n p =  p + case n of
+        sumConstants p n =  p + case n of
             Constant c-> c
-            Derivative {}-> sumExpression sumConstants 
-                [approximateDerivative n position]  
-            SubExpression s -> sumExpression sumConstants $ getTerms s
+            Derivative {}-> sumExpression sumConstants $!
+                [approximateDerivative n $! position]  
+            SubExpression s -> sumExpression sumConstants $! getTerms s
             _ -> 0
-        sumExpression s = foldr s 0
+        sumExpression s = Foldable.foldl' s 0
         lhsUnknown = sumExpression sumUnknown l
         rhsUnknown = sumExpression sumUnknown r
         lhsConstants = sumExpression sumConstants l
@@ -260,8 +262,8 @@ integrateOrder integrate i1 i2 term = integrate i1 term >>= integrate i2
         
 multProps ::(Num a, Fractional a)=> [Property] ->Position ->Side -> Reader (ValSet a) a
 multProps = 
-    foldr 
-        (\next prev pos side->
+    Foldable.foldl' 
+        (\prev next pos side->
             do
                 vs <- ask
                 return $ runReader (prev pos side) vs * runReader (prop next pos side) vs)         
