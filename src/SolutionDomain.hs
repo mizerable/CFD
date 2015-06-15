@@ -43,7 +43,7 @@ instance Functor Term  where
          _ -> undefined    
 
 storedSteps:: Int
-storedSteps = 3
+storedSteps = 4
 
 maxPos:: Direction -> Int
 maxPos d = case d of 
@@ -88,8 +88,8 @@ initialGrid=
         sl = foldl' (\prev next -> Map.insert next slMap $! prev) Map.empty $!  p
         calcPos = removeItems p $! wallPositions
     in -- ValSet calcPos v av sl  
-        let v1 = setVal (ValSet calcPos v av sl) (Position 5 5 0 0) U 0.0
-        in setVal v1 (Position 12 5 0 0) U 0.0
+        let v1 = setVal (ValSet calcPos v av sl) (Position 10 5 0 0) U 0.0
+        in setVal v1 (Position 8 5 0 0) U 0.0
         
 
 setVal:: ValSet a -> Position -> Property -> a -> ValSet a
@@ -154,7 +154,7 @@ offsetPosition:: Position->Side ->Position
 offsetPosition (Position x y z t) side = case side of
     Center -> Position x y z t 
     Now -> Position x y z t 
-    Prev -> Position x y z (mod (t - 1) storedSteps)  
+    Prev -> Position x y z $! mod (t - 1) storedSteps  
     _ -> 
         let position = Position x y z t
             maxOrMin = if isUpperSide side then min else max
@@ -190,21 +190,23 @@ envIfWall (Position x y z _) env = if Set.member (Position x y z 0) wallPosition
 --prop::(Num a, Fractional a)=> Property->Position->Side-> Reader (ValSet a) a
 prop property position side env = 
     let neighbor = offsetPosition position side
-        --noValError = error ("no value "
-          --                  ++ show (xPos position)++ " "
-          --                  ++ show (yPos position)++ " "
-          --                  ++ show (zPos position)++ " "
-          --                  ++ show (timePos position)++ " "
-          --                  ++ show property ++ " "
-          --                  ++ show side)
+        noValError = error ("no value "
+                            ++ show (xPos position)++ " "
+                            ++ show (yPos position)++ " "
+                            ++ show (zPos position)++ " "
+                            ++ show (timePos position)++ " "
+                            ++ show property ++ " "
+                            ++ show side)
         getVal:: Position -> Map.Map Position (Map.Map Property Double) -> Double
         getVal p set = fromMaybe 
           --(case timePos position of
            --    0 -> 0.0
            --    _ -> runReader (prop property (offsetPosition p Prev) side)
            --           env)
+            --noValError
             (fromJust $! Map.lookup (modifyPositionComponent p Time 0) (vals initialGrid )>>= Map.lookup property)   
             (Map.lookup p set >>= Map.lookup property)
-        res p = getVal (positionIfWall p) (vals $! envIfWall p env )
+        --res p = getVal (positionIfWall p) (vals $! envIfWall p env )
+        res p = getVal p (vals env )
     in average [ res position, res neighbor]
 

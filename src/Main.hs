@@ -157,18 +157,18 @@ getDiscEqInstance:: Equation (Position -> [Term a]) -> Position -> Equation (Ter
 getDiscEqInstance (Equation l r up) pos = Equation (concatMap (\t -> t pos) $! l) (concatMap (\t -> t pos) $! r) up
     
 advanceTime :: Position -> Position
-advanceTime (Position x y z t ) = Position x y z (mod (t+1) storedSteps)     
+advanceTime (Position x y z t ) = Position x y z $! mod (t+1) storedSteps     
     
 --applyDiffEq :: (Fractional a, NFData a)=> ValSet a -> Equation (Position -> [Term a]) -> Bool-> [ (Position,Property,a,Bool)]    
-applyDiffEq (ValSet p _ _ _) eq saveAtNextTime=
+applyDiffEq (eq, saveAtNextTime,getPos) env =
     --runPar $ parMap
     map
         (\pos -> 
-            let discEquation = getDiscEqInstance eq pos 
+            let discEquation = getDiscEqInstance (runReader eq env) pos 
                 solvedProperty = unknownProperty discEquation
                 newValue = solveUnknown discEquation pos
             in ( pos, solvedProperty, newValue, saveAtNextTime)
-        ) p
+        ) (getPos env)
   
 applyResults ::  [(Position, Property, a,Bool)]-> ValSet a -> ValSet a
 applyResults res (ValSet p v av sl) = 
@@ -184,24 +184,24 @@ applyResults res (ValSet p v av sl) =
 
 -- calcSteps :: (Fractional a, RealFloat a)=>  [(Reader (ValSet a) (Equation (Position-> [Term a])) , Bool)]
 calcSteps = [ 
-    (gasLawPressure, False) 
-    ,(continuity, True)
-    ,(uMomentum, True)
-    ,(vMomentum,  True)
-    ,(wMomentum,  True)
-    ,(energy,  True)  
+    (gasLawPressure, False, (++)wallPositions . calculatedPositions ) 
+    ,(continuity, True, calculatedPositions )
+    ,(uMomentum, True, calculatedPositions )
+    ,(vMomentum,  True, calculatedPositions )
+    ,(wMomentum,  True, calculatedPositions )
+    ,(energy,  True, calculatedPositions )  
     ] 
 
 runSingleStep prev _ = 
     let results = 
             --runPar $ parMap 
             map
-                (\x-> applyDiffEq prev (runReader (fst x) prev) (snd x) ) 
+                (\x-> applyDiffEq x prev ) 
                 calcSteps 
-    in applyResults (concatMap id results) prev
+    in applyResults (concat results) prev
                 
 runTimeSteps :: ValSet Double
-runTimeSteps = (\x -> foldl'  runSingleStep x [0..3] ) $! initialGrid  
+runTimeSteps = (\x -> foldl'  runSingleStep x [0..4] ) $! initialGrid  
  
 testTerms = [Unknown 2.4, Constant 1.2, Constant 3.112, Unknown (-0.21),  SubExpression (Expression [Constant 2, Constant 2, SubExpression (Expression [Unknown 0.33333])])]
 
