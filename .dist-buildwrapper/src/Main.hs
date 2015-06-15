@@ -201,7 +201,7 @@ runSingleStep prev _ =
     in applyResults (concatMap id results) prev
                 
 runTimeSteps :: ValSet Double
-runTimeSteps = (\x -> foldl'  runSingleStep x [0..2] ) $! initialGrid  
+runTimeSteps = (\x -> foldl'  runSingleStep x [0..3] ) $! initialGrid  
  
 testTerms = [Unknown 2.4, Constant 1.2, Constant 3.112, Unknown (-0.21),  SubExpression (Expression [Constant 2, Constant 2, SubExpression (Expression [Unknown 0.33333])])]
 
@@ -223,7 +223,7 @@ writeTerms terms =
     let (_:_:xs) =  reverse $! writeTermsOrig terms 
     in reverse xs
   
-testPosition =   Position 4 5 0 0
+testPosition =   Position 1 1 0 0
     
 makeRows :: [[a]] -> [a]-> [a] -> Int -> Int-> [[a]]    
 makeRows whole curr [] _ _ = whole ++ [curr]    

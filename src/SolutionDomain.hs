@@ -59,7 +59,7 @@ removeItems orig remove=
            
 wallPositionsVals :: ValSet Double
 wallPositionsVals = ValSet 
-     inflowPositions
+     [Position 0 14 0 0 , Position 0 4 0 0, Position 0 1 0 0 ]--inflowPositions
      Map.empty 
      Map.empty Map.empty 
 
@@ -206,6 +206,5 @@ prop property position side env =
             (fromJust $! Map.lookup (modifyPositionComponent p Time 0) (vals initialGrid )>>= Map.lookup property)   
             (Map.lookup p set >>= Map.lookup property)
         res p = getVal (positionIfWall p) (vals $! envIfWall p env )
-        resreg p = getVal p (vals env)
-    in average [ resreg position, resreg neighbor]
+    in average [ res position, res neighbor]
 

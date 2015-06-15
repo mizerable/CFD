@@ -1274,3 +1274,6 @@ Temporary Items
 /.dist-buildwrapper/
 /.dist-buildwrapper/
 /.dist-buildwrapper/
+/src/Main.exe
+/src/main.hi
+/src/main.o
