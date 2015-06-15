@@ -8,7 +8,6 @@ import Control.Monad.Reader as Reader
 import Data.List
 
 data Side =  Now | Prev |East | West | North | South | Top | Bottom | Center deriving (Show,Eq,Ord, Enum)
-
   
 data Direction = Time | X | Y | Z deriving (Enum,Ord,Eq,Show)
 data DimensionType = Temporal | Spatial deriving ( Eq)
@@ -199,12 +198,17 @@ prop property position side env =
                             ++ show side)
         getVal:: Position -> Map.Map Position (Map.Map Property Double) -> Double
         getVal p set = fromMaybe 
-          --(case timePos position of
-           --    0 -> 0.0
-           --    _ -> runReader (prop property (offsetPosition p Prev) side)
-           --           env)
+            --(case timePos position of
+             --   0 -> noValError
+              --  _ -> prop property (offsetPosition p Prev) side  env)
             --noValError
-            (fromJust $! Map.lookup (modifyPositionComponent p Time 0) (vals initialGrid )>>= Map.lookup property)   
+            (case property of
+                Density -> noValError
+                Temperature -> noValError
+                Pressure -> noValError 
+                _ -> fromJust $! Map.lookup (modifyPositionComponent p Time 0) (vals initialGrid )>>= Map.lookup property
+            )
+            --(fromJust $! Map.lookup (offsetPosition p Prev) set >>= Map.lookup property)   
             (Map.lookup p set >>= Map.lookup property)
         --res p = getVal (positionIfWall p) (vals $! envIfWall p env )
         res p = getVal p (vals env )

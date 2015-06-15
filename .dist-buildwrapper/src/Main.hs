@@ -170,8 +170,8 @@ applyDiffEq (eq, saveAtNextTime,getPos) env =
             in ( pos, solvedProperty, newValue, saveAtNextTime)
         ) (getPos env)
   
-applyResults ::  [(Position, Property, a,Bool)]-> ValSet a -> ValSet a
-applyResults res (ValSet p v av sl) = 
+-- applyResults ::  [(Position, Property, a,Bool)]-> ValSet a -> ValSet a
+applyResults res pushTime (ValSet p v av sl) = 
     let newVals = foldl' 
             (\prev (pos,property,newVal,saveAtNextTime)  ->
                 let newPos = if saveAtNextTime 
@@ -180,28 +180,41 @@ applyResults res (ValSet p v av sl) =
                     subdict = fromMaybe Map.empty (Map.lookup newPos prev)  
                 in Map.insert newPos (Map.insert property newVal subdict) prev
             ) v res
-    in ValSet (map advanceTime p) newVals av sl
+    in ValSet 
+        (if pushTime then map advanceTime p else p) 
+        newVals av sl
 
 -- calcSteps :: (Fractional a, RealFloat a)=>  [(Reader (ValSet a) (Equation (Position-> [Term a])) , Bool)]
 calcSteps = [ 
-    (gasLawPressure, False, (++)wallPositions . calculatedPositions ) 
-    ,(continuity, True, calculatedPositions )
+    (continuity, True, allPositionsCurrentTime )
     ,(uMomentum, True, calculatedPositions )
     ,(vMomentum,  True, calculatedPositions )
     ,(wMomentum,  True, calculatedPositions )
-    ,(energy,  True, calculatedPositions )  
+    ,(energy,  True, allPositionsCurrentTime )  
     ] 
 
+supportCalcSteps = [
+    (gasLawPressure, False , allPositionsCurrentTime  )
+    ]
+
+allPositionsCurrentTime env = 
+    let curTimeLevel = timePos $ head $ calculatedPositions env
+    in map (\x-> modifyPositionComponent x Time curTimeLevel ) makeAllPositions 
+
 runSingleStep prev _ = 
-    let results = 
+    let runSteps steps vs= concat $!
             --runPar $ parMap 
             map
-                (\x-> applyDiffEq x prev ) 
-                calcSteps 
-    in applyResults (concat results) prev
+                (\step-> applyDiffEq step vs ) 
+                steps  
+    in foldl'
+        (\vs (nextSteps,pushTime) ->  applyResults (runSteps nextSteps vs) pushTime vs)
+        prev
+        -- this third element in this below is a waste every time EXCEPT the last time step.
+        [(supportCalcSteps,False),(calcSteps,True),(supportCalcSteps,False)] 
                 
 runTimeSteps :: ValSet Double
-runTimeSteps = (\x -> foldl'  runSingleStep x [0..4] ) $! initialGrid  
+runTimeSteps = (\x -> foldl'  runSingleStep x [0..25] ) $! initialGrid  
  
 testTerms = [Unknown 2.4, Constant 1.2, Constant 3.112, Unknown (-0.21),  SubExpression (Expression [Constant 2, Constant 2, SubExpression (Expression [Unknown 0.33333])])]
 
@@ -285,5 +298,7 @@ main =
     >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq gasLawPressure)
     >>= (\_ -> putStrLn " solving... ")
     >>= (\_ -> print $ solveUnknown (testEq gasLawPressure) testPosition)
-    >>= (\_ -> putStrLn $ stringDomain U ( timePos $ offsetPosition (head $ calculatedPositions runTimeSteps) Prev) (1+maxPos X) runTimeSteps  )
-    >>= (\_ -> putStrLn $ stringDomain U (timePos $ head $ calculatedPositions runTimeSteps) (1+maxPos X) runTimeSteps  )
+    >>= (\_ -> putStrLn $! stringDomain Pressure ( timePos $ offsetPosition (head $ calculatedPositions runTimeSteps) Prev) (1+maxPos X) runTimeSteps  )
+    >>= (\_ -> putStrLn $! stringDomain Pressure (timePos $ head $ calculatedPositions runTimeSteps) (1+maxPos X) runTimeSteps  )
+    >>= (\_ -> putStrLn $! stringDomain U ( timePos $ offsetPosition (head $ calculatedPositions runTimeSteps) Prev) (1+maxPos X) runTimeSteps  )
+    >>= (\_ -> putStrLn $! stringDomain U (timePos $ head $ calculatedPositions runTimeSteps) (1+maxPos X) runTimeSteps  )
