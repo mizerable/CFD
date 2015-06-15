@@ -124,7 +124,7 @@ integSurface f position direction unknownProp= do
                         then 
                             let constantVal = fmap
                                     (* (sideAreaVal 
-                                        / runReader (prop unknownProp position s) vs)) 
+                                        / prop unknownProp position s vs)) 
                                     term
                             in Unknown $ if isNaN (val constantVal) 
                                 then 1 else val constantVal      
@@ -264,7 +264,7 @@ multProps =
         (\prev next pos side->
             do
                 vs <- ask
-                return $ runReader (prev pos side) vs * runReader (prop next pos side) vs)         
+                return $ runReader (prev pos side) vs *  prop next pos side vs)         
         (\_ _ -> return 1) 
                 
 -- squareDerivative:: (Num a, Fractional a) => [Property] -> a->Direction -> [Reader (ValSet a) (Term a)]        

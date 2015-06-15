@@ -50,7 +50,7 @@ testEquation =
     Equation 
         --[Unknown 2, Constant 4, Constant (-0.232)]
         [Unknown 2, SubExpression (Expression [Constant 2, Constant 2, Unknown 0.025]), Constant (-0.232)] 
-        ( addTerms [Unknown (-0.025),Unknown (-0.05)] $! [Constant 2, Constant 3 ] )
+        ( addTerms [Unknown (-0.025),Unknown (-0.05)] [Constant 2, Constant 3 ] )
         U
 
 --continuity::(Num a, Fractional a, RealFloat a)=> Reader (ValSet a) (Equation (Position-> [Term a]))
@@ -149,15 +149,15 @@ gasLawPressure = do
     return $  
         Equation
             [ const [Unknown 1]]
-            [ \pos -> [ Constant $ gasConstantR * runReader(prop Density pos Center ) env 
-                * runReader (prop Temperature pos Center) env ] ]
+            [ \pos -> [ Constant $ gasConstantR * prop Density pos Center  env 
+                * prop Temperature pos Center env ] ]
             Pressure          
     
 getDiscEqInstance:: Equation (Position -> [Term a]) -> Position -> Equation (Term a)
 getDiscEqInstance (Equation l r up) pos = Equation (concatMap (\t -> t pos) $! l) (concatMap (\t -> t pos) $! r) up
     
 advanceTime :: Position -> Position
-advanceTime (Position x y z t ) = Position x y z (t+1)    
+advanceTime (Position x y z t ) = Position x y z (mod (t+1) storedSteps)     
     
 --applyDiffEq :: (Fractional a, NFData a)=> ValSet a -> Equation (Position -> [Term a]) -> Bool-> [ (Position,Property,a,Bool)]    
 applyDiffEq (ValSet p _ _ _) eq saveAtNextTime=
@@ -201,7 +201,7 @@ runSingleStep prev _ =
     in applyResults (concatMap id results) prev
                 
 runTimeSteps :: ValSet Double
-runTimeSteps = (\x -> foldl'  runSingleStep x [0..0] ) $! initialGrid  
+runTimeSteps = (\x -> foldl'  runSingleStep x [0..2] ) $! initialGrid  
  
 testTerms = [Unknown 2.4, Constant 1.2, Constant 3.112, Unknown (-0.21),  SubExpression (Expression [Constant 2, Constant 2, SubExpression (Expression [Unknown 0.33333])])]
 
@@ -231,10 +231,13 @@ makeRows whole curr items 0 width = makeRows (whole ++ [curr] ) [] items width w
 makeRows whole curr (x:xs) r width= makeRows whole (curr++[x]) xs (r-1) width   
              
 --stringDomain:: (Num a, Fractional a, Show a ) => Property ->[Position]->Int-> ValSet a -> String
-stringDomain property positions rowLength set =
-    let rows = 
+stringDomain property timeLevel rowLength set =
+    let positions = map 
+            (\(Position x y z _) -> Position x y z timeLevel)
+            makeAllPositions
+        rows = 
             makeRows [[]] [] 
-                (map (\next -> runReader (prop property next Center) set ) positions )
+                (map (\next -> prop property next Center set ) $ positions )
                 rowLength
                 rowLength
         strRows = map ( foldl' (\prev next-> prev ++ " " ++ show next) "" ) rows
@@ -243,4 +246,44 @@ stringDomain property positions rowLength set =
 main:: IO()
 main = 
     putStrLn "starting ..... "
-    >>= (\_ -> putStrLn $ stringDomain U (calculatedPositions runTimeSteps) (1+maxPos X) runTimeSteps  )
+    >>= (\_-> print ( solveUnknown testEquation $ Position 0 0 0 0)) 
+    >>= (\_ -> putStrLn $ writeTerms $ distributeMultiply testTerms 2)
+    >>= (\_ -> print $ prop U testPosition Center  initialGrid)
+    >>= (\_ -> putStrLn " continuity ------------ ")
+    >>= (\_ -> putStrLn $ writeTerms $ rhs $ testEq continuity)
+    >>= (\_ -> putStrLn " = ")
+    >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq continuity)
+    >>= (\_ -> putStrLn " solving... ")
+    >>= (\_ -> print $ solveUnknown (testEq continuity) testPosition)
+    >>= (\_ -> putStrLn " U Momentum------------ ")
+    >>= (\_ -> putStrLn $ writeTerms $ rhs $ testEq uMomentum)
+    >>= (\_ -> putStrLn " = ")
+    >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq uMomentum)
+    >>= (\_ -> putStrLn " solving... ")
+    >>= (\_ -> print $ solveUnknown (testEq uMomentum) testPosition)
+    >>= (\_ -> putStrLn " V Momentum------------ ")
+    >>= (\_ -> putStrLn $ writeTerms $ rhs $ testEq vMomentum)
+    >>= (\_ -> putStrLn " = ")
+    >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq vMomentum)
+    >>= (\_ -> putStrLn " solving... ")
+    >>= (\_ -> print $ solveUnknown (testEq vMomentum) testPosition)
+    >>= (\_ -> putStrLn " W Momentum------------ ")
+    >>= (\_ -> putStrLn $ writeTerms $ rhs $ testEq wMomentum)
+    >>= (\_ -> putStrLn " = ")
+    >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq wMomentum)
+    >>= (\_ -> putStrLn " solving... ")
+    >>= (\_ -> print $ solveUnknown (testEq wMomentum) testPosition)
+    >>= (\_ -> putStrLn " ENERGY ------------ ")
+    >>= (\_ -> putStrLn $ writeTerms $ rhs $ testEq energy)
+    >>= (\_ -> putStrLn " = ")
+    >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq energy)
+    >>= (\_ -> putStrLn " solving... ")
+    >>= (\_ -> print $ solveUnknown (testEq energy) testPosition)
+    >>= (\_ -> putStrLn " Pressure ------------ ")
+    >>= (\_ -> putStrLn $ writeTerms $ rhs $ testEq gasLawPressure)
+    >>= (\_ -> putStrLn " = ")
+    >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq gasLawPressure)
+    >>= (\_ -> putStrLn " solving... ")
+    >>= (\_ -> print $ solveUnknown (testEq gasLawPressure) testPosition)
+    >>= (\_ -> putStrLn $ stringDomain U ( timePos $ offsetPosition (head $ calculatedPositions runTimeSteps) Prev) (1+maxPos X) runTimeSteps  )
+    >>= (\_ -> putStrLn $ stringDomain U (timePos $ head $ calculatedPositions runTimeSteps) (1+maxPos X) runTimeSteps  )
