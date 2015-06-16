@@ -46,8 +46,8 @@ storedSteps = 4
 
 maxPos:: Direction -> Int
 maxPos d = case d of 
-    X -> 15
-    Y -> 15
+    X -> 30
+    Y -> 30
     Z -> 0
     Time -> undefined
 
@@ -58,7 +58,7 @@ removeItems orig remove=
            
 wallPositionsVals :: ValSet Double
 wallPositionsVals = ValSet 
-     inflowPositions
+     (obstacle : inflowPositions)
      Map.empty 
      Map.empty Map.empty 
 
@@ -67,6 +67,8 @@ wallPositions = calculatedPositions wallPositionsVals
 
 wallPositionsSet :: Set.Set Position
 wallPositionsSet = Set.fromList $! wallPositions 
+
+obstacle = Position (quot (maxPos X)  3) (quot (maxPos Y) 2) 0 0
 
 initialGrid:: ValSet Double
 initialGrid= 
@@ -87,10 +89,8 @@ initialGrid=
         sl = foldl' (\prev next -> Map.insert next slMap $! prev) Map.empty $!  p
         calcPos = removeItems p $! wallPositions
     in -- ValSet calcPos v av sl  
-        let v1 = setVal (ValSet calcPos v av sl) (Position 10 5 0 0) U 0.0
-        in setVal v1 (Position 1 5 0 0) U 0.0
+        setVal (ValSet calcPos v av sl) obstacle U 0.0
         
-
 setVal:: ValSet a -> Position -> Property -> a -> ValSet a
 setVal (ValSet p v av sl) pos property newVal = 
     let subDict = fromJust $ Map.lookup pos v  

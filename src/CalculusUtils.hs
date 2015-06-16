@@ -8,7 +8,7 @@ import Data.List
 
 
 timeStep :: (Num a,Fractional a) => a            
-timeStep = 0.0001
+timeStep = 0.01
 
 specificHeatCv :: (Num a) => a
 specificHeatCv = 15
