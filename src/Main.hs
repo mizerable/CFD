@@ -215,15 +215,15 @@ runSingleStep prev _ =
         [(supportCalcSteps,False),(calcSteps,True),(supportCalcSteps,False)] 
                 
 runTimeSteps :: ValSet Double
-runTimeSteps = (\x -> foldl'  runSingleStep x [0..6] ) $! initialGrid  
+runTimeSteps = (\x -> foldl'  runSingleStep x [0..25] ) $! initialGrid  
  
-runTimeSteps_Print :: IO (ValSet Double)
 runTimeSteps_Print =
-    foldl'
-        (\prev next -> _
-        
+    foldM_
+        (\prev _ -> do
+            putStrLn $ stringDomain U (timePos $ head $ calculatedPositions prev) (1 + maxPos X) prev
+            return $! runSingleStep prev ()
         )
-        (return initialGrid)
+        initialGrid
         [0..10]
  
 testTerms = [Unknown 2.4, Constant 1.2, Constant 3.112, Unknown (-0.21),  SubExpression (Expression [Constant 2, Constant 2, SubExpression (Expression [Unknown 0.33333])])]
@@ -308,7 +308,8 @@ main =
     >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq gasLawPressure)
     >>= (\_ -> putStrLn " solving... ")
     >>= (\_ -> print $ solveUnknown (testEq gasLawPressure) testPosition)
-    >>= (\_ -> putStrLn $! stringDomain Pressure ( timePos $ offsetPosition (head $ calculatedPositions runTimeSteps) Prev) (1+maxPos X) runTimeSteps  )
-    >>= (\_ -> putStrLn $! stringDomain Pressure (timePos $ head $ calculatedPositions runTimeSteps) (1+maxPos X) runTimeSteps  )
-    >>= (\_ -> putStrLn $! stringDomain U ( timePos $ offsetPosition (head $ calculatedPositions runTimeSteps) Prev) (1+maxPos X) runTimeSteps  )
-    >>= (\_ -> putStrLn $! stringDomain U (timePos $ head $ calculatedPositions runTimeSteps) (1+maxPos X) runTimeSteps  )
+    -- >>= (\_ -> putStrLn $! stringDomain Pressure ( timePos $ offsetPosition (head $ calculatedPositions runTimeSteps) Prev) (1+maxPos X) runTimeSteps  )
+    -- >>= (\_ -> putStrLn $! stringDomain Pressure (timePos $ head $ calculatedPositions runTimeSteps) (1+maxPos X) runTimeSteps  )
+    -- >>= (\_ -> putStrLn $! stringDomain U ( timePos $ offsetPosition (head $ calculatedPositions runTimeSteps) Prev) (1+maxPos X) runTimeSteps  )
+    -- >>= (\_ -> putStrLn $! stringDomain U (timePos $ head $ calculatedPositions runTimeSteps) (1+maxPos X) runTimeSteps  )
+    >>= (\_ -> runTimeSteps_Print )
