@@ -7,6 +7,7 @@ import Control.Monad.Reader as Reader
 -- import Control.Monad.Par as Par
 import SolutionDomain
 import CalculusUtils
+import GeometryStuff
 import Data.List
 
 --instance Par.NFData Property 
@@ -214,7 +215,16 @@ runSingleStep prev _ =
         [(supportCalcSteps,False),(calcSteps,True),(supportCalcSteps,False)] 
                 
 runTimeSteps :: ValSet Double
-runTimeSteps = (\x -> foldl'  runSingleStep x [0..25] ) $! initialGrid  
+runTimeSteps = (\x -> foldl'  runSingleStep x [0..6] ) $! initialGrid  
+ 
+runTimeSteps_Print :: IO (ValSet Double)
+runTimeSteps_Print =
+    foldl'
+        (\prev next -> _
+        
+        )
+        (return initialGrid)
+        [0..10]
  
 testTerms = [Unknown 2.4, Constant 1.2, Constant 3.112, Unknown (-0.21),  SubExpression (Expression [Constant 2, Constant 2, SubExpression (Expression [Unknown 0.33333])])]
 
@@ -250,7 +260,7 @@ stringDomain property timeLevel rowLength set =
             makeAllPositions
         rows = 
             makeRows [[]] [] 
-                (map (\next -> prop property next Center set ) $ positions )
+                (map (\next -> prop property next Center set )  positions )
                 rowLength
                 rowLength
         strRows = map ( foldl' (\prev next-> prev ++ " " ++ show next) "" ) rows

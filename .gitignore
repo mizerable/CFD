@@ -1277,3 +1277,7 @@ Temporary Items
 /src/Main.exe
 /src/main.hi
 /src/main.o
+*.inplace
+.dist-buildwrapper/CFD.cabal
+.dist-buildwrapper/dist/setup-config
+*.bwinfo
