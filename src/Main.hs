@@ -220,11 +220,12 @@ runTimeSteps = (\x -> foldl'  runSingleStep x [0..25] ) $! initialGrid
 runTimeSteps_Print =
     foldM_
         (\prev _ -> do
+            putStrLn $ show $ length (calculatedPositions prev)
             putStrLn $ stringDomain U (timePos $ head $ calculatedPositions prev) (1 + maxPos X) prev
             return $! runSingleStep prev ()
         )
         initialGrid
-        [0..10]
+        [0..5]
  
 testTerms = [Unknown 2.4, Constant 1.2, Constant 3.112, Unknown (-0.21),  SubExpression (Expression [Constant 2, Constant 2, SubExpression (Expression [Unknown 0.33333])])]
 

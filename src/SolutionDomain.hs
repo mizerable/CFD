@@ -58,7 +58,7 @@ removeItems orig remove=
            
 wallPositionsVals :: ValSet Double
 wallPositionsVals = ValSet 
-     [Position 0 14 0 0 , Position 0 4 0 0, Position 0 1 0 0 ]--inflowPositions
+     inflowPositions
      Map.empty 
      Map.empty Map.empty 
 
@@ -88,7 +88,7 @@ initialGrid=
         calcPos = removeItems p $! wallPositions
     in -- ValSet calcPos v av sl  
         let v1 = setVal (ValSet calcPos v av sl) (Position 10 5 0 0) U 0.0
-        in setVal v1 (Position 8 5 0 0) U 0.0
+        in setVal v1 (Position 1 5 0 0) U 0.0
         
 
 setVal:: ValSet a -> Position -> Property -> a -> ValSet a
