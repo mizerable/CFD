@@ -14,6 +14,7 @@ import qualified Graphics.Gnuplot.Advanced as GP
 import qualified Graphics.Gnuplot.Plot.TwoDimensional as Plot2D
 import qualified Graphics.Gnuplot.Graph.TwoDimensional as Graph2D
 import Graphics.Gnuplot.Plot.TwoDimensional (linearScale, )
+import Graphics.Gnuplot.Terminal.PNG as PNG 
 
 instance Par.NFData Property 
 instance Par.NFData Position
@@ -230,14 +231,14 @@ image2d =
 runTimeSteps_Print =
     foldM_
         (\prev step -> do
-            GP.plotDefault image2d
-            putStrLn $ show $ length (calculatedPositions prev)
+            GP.plot ( PNG.cons $ "c:\\"++ (show step) ++".png") image2d
+            --putStrLn $ show $ length (calculatedPositions prev)
             putStrLn $ show step 
-            putStrLn $ stringDomain U (timePos $ head $ calculatedPositions prev) (1 + maxPos X) prev
-            return $! runSingleStep prev ()
+            --putStrLn $ stringDomain U (timePos $ head $ calculatedPositions prev) (1 + maxPos X) prev
+            --return $! runSingleStep prev ()
         )
-        initialGrid
-        [0..3]
+        ()--initialGrid
+        [0..4]
  
 testTerms = [Unknown 2.4, Constant 1.2, Constant 3.112, Unknown (-0.21),  SubExpression (Expression [Constant 2, Constant 2, SubExpression (Expression [Unknown 0.33333])])]
 
