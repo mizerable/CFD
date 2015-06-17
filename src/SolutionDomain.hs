@@ -70,6 +70,8 @@ wallPositionsSet = Set.fromList $! wallPositions
 
 obstacle = Position (quot (maxPos X)  3) (quot (maxPos Y) 2) 0 0
 
+obstacles = [obstacle]
+
 initialGrid:: ValSet Double
 initialGrid= 
     let p = makeAllPositions
@@ -88,8 +90,10 @@ initialGrid=
         av = foldl' (\prev next -> Map.insert next avMap $! prev) Map.empty $!  p
         sl = foldl' (\prev next -> Map.insert next slMap $! prev) Map.empty $!  p
         calcPos = removeItems p $! wallPositions
-    in -- ValSet calcPos v av sl  
-        setVal (ValSet calcPos v av sl) obstacle U 0.0
+    in foldl'
+        (\prev next -> setVal prev next U 0.0)
+        (ValSet calcPos v av sl)
+        obstacles
         
 setVal:: ValSet a -> Position -> Property -> a -> ValSet a
 setVal (ValSet p v av sl) pos property newVal = 

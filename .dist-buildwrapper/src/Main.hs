@@ -4,14 +4,19 @@ module Main where
 import qualified Data.Map.Strict as Map 
 import Data.Maybe
 import Control.Monad.Reader as Reader
--- import Control.Monad.Par as Par
+import Control.Monad.Par as Par
 import SolutionDomain
 import CalculusUtils
 import GeometryStuff
 import Data.List
 
---instance Par.NFData Property 
---instance Par.NFData Position
+import qualified Graphics.Gnuplot.Advanced as GP
+import qualified Graphics.Gnuplot.Plot.TwoDimensional as Plot2D
+import qualified Graphics.Gnuplot.Graph.TwoDimensional as Graph2D
+import Graphics.Gnuplot.Plot.TwoDimensional (linearScale, )
+
+instance Par.NFData Property 
+instance Par.NFData Position
 
 defaultInflow:: (Num a, Fractional a) => a
 defaultInflow = 1
@@ -162,8 +167,7 @@ advanceTime (Position x y z t ) = Position x y z $! mod (t+1) storedSteps
     
 --applyDiffEq :: (Fractional a, NFData a)=> ValSet a -> Equation (Position -> [Term a]) -> Bool-> [ (Position,Property,a,Bool)]    
 applyDiffEq (eq, saveAtNextTime,getPos) env =
-    --runPar $ parMap
-    map
+    runPar $ parMap
         (\pos -> 
             let discEquation = getDiscEqInstance (runReader eq env) pos 
                 solvedProperty = unknownProperty discEquation
@@ -204,8 +208,7 @@ allPositionsCurrentTime env =
 
 runSingleStep prev _ = 
     let runSteps steps vs= concat $!
-            --runPar $ parMap 
-            map
+            runPar $ parMap 
                 (\step-> applyDiffEq step vs ) 
                 steps  
     in foldl'
@@ -217,15 +220,24 @@ runSingleStep prev _ =
 runTimeSteps :: ValSet Double
 runTimeSteps = (\x -> foldl'  runSingleStep x [0..25] ) $! initialGrid  
  
+image2d :: Plot2D.T Double Double
+image2d =
+   case linearScale 300 (-20,20) of
+      xs ->
+         Plot2D.function Graph2D.image (liftM2 (,) xs xs) $
+            \(x,y) -> cos (sqrt (x*x+x*y+y*y)) 
+ 
 runTimeSteps_Print =
     foldM_
-        (\prev _ -> do
+        (\prev step -> do
+            GP.plotDefault image2d
             putStrLn $ show $ length (calculatedPositions prev)
+            putStrLn $ show step 
             putStrLn $ stringDomain U (timePos $ head $ calculatedPositions prev) (1 + maxPos X) prev
             return $! runSingleStep prev ()
         )
         initialGrid
-        [0..1000]
+        [0..3]
  
 testTerms = [Unknown 2.4, Constant 1.2, Constant 3.112, Unknown (-0.21),  SubExpression (Expression [Constant 2, Constant 2, SubExpression (Expression [Unknown 0.33333])])]
 

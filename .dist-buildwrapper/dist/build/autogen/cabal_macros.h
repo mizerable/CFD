@@ -14,6 +14,13 @@
   (major1) == 0 && (major2) <  5 || \
   (major1) == 0 && (major2) == 5 && (minor) <= 5)
 
+/* package gnuplot-0.5.3.1 */
+#define VERSION_gnuplot "0.5.3.1"
+#define MIN_VERSION_gnuplot(major1,major2,minor) (\
+  (major1) <  0 || \
+  (major1) == 0 && (major2) <  5 || \
+  (major1) == 0 && (major2) == 5 && (minor) <= 3)
+
 /* package monad-par-0.3.4.7 */
 #define VERSION_monad_par "0.3.4.7"
 #define MIN_VERSION_monad_par(major1,major2,minor) (\
