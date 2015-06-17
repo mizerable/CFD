@@ -221,23 +221,23 @@ runSingleStep prev _ =
 runTimeSteps :: ValSet Double
 runTimeSteps = (\x -> foldl'  runSingleStep x [0..25] ) $! initialGrid  
  
-image2d :: Plot2D.T Double Double
-image2d =
-   case linearScale 300 (-20,20) of
-      xs ->
-         Plot2D.function Graph2D.image (liftM2 (,) xs xs) $
-            \(x,y) -> cos (sqrt (x*x+x*y+y*y)) 
- 
+plotDomain :: [[Double]]-> Plot2D.T Int Int
+plotDomain grid = 
+    Plot2D.function Graph2D.image 
+        (liftM2 (,) [0..length grid -1 ] [0.. length (head grid) -1 ]) 
+            $ \(x,y) -> (grid!!x)!!y
+             
 runTimeSteps_Print =
     foldM_
         (\prev step -> do
-            GP.plot ( PNG.cons $ "c:\\"++ (show step) ++".png") image2d
-            --putStrLn $ show $ length (calculatedPositions prev)
+            GP.plot ( PNG.cons $ "c:\\"++ (show step) ++".png") 
+                $ plotDomain $ valSetToGrid prev step U (1+maxPos X)
+            putStrLn $ show $ length (calculatedPositions prev)
             putStrLn $ show step 
-            --putStrLn $ stringDomain U (timePos $ head $ calculatedPositions prev) (1 + maxPos X) prev
-            --return $! runSingleStep prev ()
+            putStrLn $ stringDomain U (timePos $ head $ calculatedPositions prev) (1 + maxPos X) prev
+            return $! runSingleStep prev ()
         )
-        ()--initialGrid
+        initialGrid
         [0..4]
  
 testTerms = [Unknown 2.4, Constant 1.2, Constant 3.112, Unknown (-0.21),  SubExpression (Expression [Constant 2, Constant 2, SubExpression (Expression [Unknown 0.33333])])]
@@ -266,17 +266,19 @@ makeRows :: [[a]] -> [a]-> [a] -> Int -> Int-> [[a]]
 makeRows whole curr [] _ _ = whole ++ [curr]    
 makeRows whole curr items 0 width = makeRows (whole ++ [curr] ) [] items width width          
 makeRows whole curr (x:xs) r width= makeRows whole (curr++[x]) xs (r-1) width   
-             
---stringDomain:: (Num a, Fractional a, Show a ) => Property ->[Position]->Int-> ValSet a -> String
-stringDomain property timeLevel rowLength set =
+
+valSetToGrid vs timeLevel property rowLength =
     let positions = map 
             (\(Position x y z _) -> Position x y z timeLevel)
             makeAllPositions
-        rows = 
-            makeRows [[]] [] 
-                (map (\next -> prop property next Center set )  positions )
-                rowLength
-                rowLength
+    in makeRows [] [] 
+            (map (\next -> prop property next Center vs )  positions )
+            rowLength
+            rowLength 
+             
+--stringDomain:: (Num a, Fractional a, Show a ) => Property ->[Position]->Int-> ValSet a -> String
+stringDomain property timeLevel rowLength set =
+    let rows = valSetToGrid set timeLevel property rowLength  
         strRows = map ( foldl' (\prev next-> prev ++ " " ++ show next) "" ) rows
     in foldl' (\prev next -> prev ++ "\n" ++ next ) "" strRows 
             
