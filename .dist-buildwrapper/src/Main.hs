@@ -169,6 +169,7 @@ advanceTime (Position x y z t ) = Position x y z $! mod (t+1) storedSteps
 --applyDiffEq :: (Fractional a, NFData a)=> ValSet a -> Equation (Position -> [Term a]) -> Bool-> [ (Position,Property,a,Bool)]    
 applyDiffEq (eq, saveAtNextTime,getPos) env =
     runPar $ parMap
+    --map
         (\pos -> 
             let discEquation = getDiscEqInstance (runReader eq env) pos 
                 solvedProperty = unknownProperty discEquation
@@ -209,7 +210,8 @@ allPositionsCurrentTime env =
 
 runSingleStep prev _ = 
     let runSteps steps vs= concat $!
-            runPar $ parMap 
+            runPar $ parMap
+            --map 
                 (\step-> applyDiffEq step vs ) 
                 steps  
     in foldl'
@@ -230,15 +232,17 @@ plotDomain grid =
 runTimeSteps_Print =
     foldM_
         (\prev step -> do
-            GP.plot ( PNG.cons $ "c:\\"++ (show step) ++".png") 
-                $ plotDomain $ valSetToGrid prev step U (1+maxPos X)
+            let timeLevel = timePos $ head $ calculatedPositions prev
+            GP.plotAsync ( PNG.cons $ "c:\\temp\\"++ (show step) ++".png") 
+                $! plotDomain $! valSetToGrid prev timeLevel U (1+maxPos X)
             putStrLn $ show $ length (calculatedPositions prev)
-            putStrLn $ show step 
-            putStrLn $ stringDomain U (timePos $ head $ calculatedPositions prev) (1 + maxPos X) prev
+            putStrLn $ "step: " ++ show step 
+            putStrLn $ "timeLevel: " ++ show timeLevel
+            putStrLn $ stringDomain U timeLevel (1 + maxPos X) prev
             return $! runSingleStep prev ()
         )
         initialGrid
-        [0..4999]
+        [0..50]
  
 testTerms = [Unknown 2.4, Constant 1.2, Constant 3.112, Unknown (-0.21),  SubExpression (Expression [Constant 2, Constant 2, SubExpression (Expression [Unknown 0.33333])])]
 
