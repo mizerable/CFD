@@ -46,8 +46,8 @@ storedSteps = 4
 
 maxPos:: Direction -> Int
 maxPos d = case d of 
-    X -> 30
-    Y -> 30
+    X -> 100
+    Y -> 100
     Z -> 0
     Time -> undefined
 
