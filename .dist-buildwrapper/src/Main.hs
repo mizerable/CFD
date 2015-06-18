@@ -237,7 +237,7 @@ plotDomain :: [[Double]]-> Frame.T ( Graph2D.T Int Int)
 plotDomain grid = 
     let xsize = length (head grid)-1 
         ysize = length  grid  -1
-        printSize = (show $ xsize * 5)++","++(show $ ysize * 5)
+        printSize = (show $ ysize * 5)++","++(show $ xsize * 5)
     in Frame.cons 
             ( Opts.add ( 
                 Opt.custom "terminal pngcairo size" printSize) [printSize] $ 

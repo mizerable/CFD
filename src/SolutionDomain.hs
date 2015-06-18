@@ -52,8 +52,8 @@ storedSteps = 4
 
 maxPos:: Direction -> Int
 maxPos d = case d of 
-    X -> 300
-    Y -> 100
+    X -> 450
+    Y -> 150
     Z -> 0
     Time -> undefined
 
@@ -71,6 +71,10 @@ wallPositionsSet = Set.fromList $! wallPositions
 obstacle :: Position
 obstacle = Position [quot (maxPos X)  3,  quot (maxPos Y) 2, 0] 3 0
 
+obstacle2 = Position [(quot (maxPos X)  3 ),  (quot (maxPos Y) 2 )+ 5, 0] 3 0
+
+obstacle3 = Position [(quot (maxPos X)  3 ),  (quot (maxPos Y) 2 )+ 2, 0] 3 0
+
 squareBoundsPts :: [Position]
 squareBoundsPts = [
     obstacle
@@ -87,13 +91,13 @@ squareBounds :: [Position]
 squareBounds = connectBounds makeAllPositions squareBoundsPts
 
 obstacles :: [Position]
-obstacles = squareBoundsPts -- ++ (fillObInterior (Set.fromList squareBounds) $! offsetPosition obstacle East)
+obstacles = squareBounds ++ (fillObInterior (Set.fromList squareBounds) $! offsetPosition obstacle East)
 
-initialGrid:: ValSet Double
-initialGrid= 
+initialGridPre:: ValSet Double
+initialGridPre= 
     let vMap = foldl' (\prev next -> Map.insert next 
             (case next of 
-                U-> 1
+                U-> 2.25
                 V-> 0
                 W-> 0
                 Density -> 1
@@ -105,7 +109,13 @@ initialGrid=
         v = foldl' (\prev next -> Map.insert next vMap $! prev) Map.empty  $!  makeAllPositions
         av = foldl' (\prev next -> Map.insert next avMap $! prev) Map.empty $! makeAllPositions
         sl = foldl' (\prev next -> Map.insert next slMap $! prev) Map.empty $! makeAllPositions
-        calcPos = removeItems makeAllPositions $! wallPositions
+    in ValSet makeAllPositions v av sl 
+    
+initialGrid = 
+    let calcPos = removeItems (calculatedPositions initialGridPre) $! wallPositions
+        v= vals initialGridPre
+        av = areaVal initialGridPre
+        sl = sideLen initialGridPre
     in foldl'
         (\prev next -> setVal prev next U 0.0)
         (ValSet calcPos v av sl)
@@ -263,19 +273,19 @@ distanceSquared p1 p2 =
     
 distance p1 p2 = sqrt $ distanceSquared p1 p2 
         
-connectTwo p1 p2 allPos = 
-    let isBetween testPt = 
-            let aSq = distanceSquared p1 testPt
-                bSq = distanceSquared p2 testPt
-                cSq = distanceSquared p1 p2
-                x = sqrt $ (aSq + bSq - cSq ) / 2
-                cornerDist = sqrt $ 
-                    foldl' (\prev next ->
-                            let sl = sideLength next testPt 
-                            in prev + (sl*sl) 
-                        ) 1 (enumFrom X)
-            in cornerDist >= x
-    in filter isBetween allPos
+isBetween p1 p2 testPt = 
+    let aSq = distanceSquared p1 testPt
+        bSq = distanceSquared p2 testPt
+        cSq = distanceSquared p1 p2
+        x = sqrt $ (aSq + bSq - cSq ) / 2
+        cornerDist = sqrt $ 
+            foldl' (\prev next ->
+                    let sl = sideLength next testPt 
+                    in prev + (sl*sl) 
+                ) 0 (enumFrom X)
+    in cornerDist >= x        
+        
+connectTwo p1 p2 allPos = filter (isBetween p1 p2) allPos
 
 connectBounds :: [Position] -> [Position] -> [Position]
 connectBounds allPos points = fst $ foldl' 
@@ -287,10 +297,10 @@ connectBounds allPos points = fst $ foldl'
 sideArea s (Position p d _) = case s of 
     Now -> 1
     Prev -> 1
-    _ -> fromJust $! Map.lookup (Position p d 0) (areaVal $! initialGrid)  >>= Map.lookup s    
+    _ -> fromJust $! Map.lookup (Position p d 0) (areaVal $! initialGridPre)  >>= Map.lookup s    
 
 -- sideLength:: (Num a, Fractional a) => Direction -> Position ->  a
 sideLength direction (Position p d _) = case direction of 
     Time -> timeStep
-    _ -> fromJust $! Map.lookup (Position p d 0) (sideLen $! initialGrid) >>= Map.lookup direction   
+    _ -> fromJust $! Map.lookup (Position p d 0) (sideLen $! initialGridPre) >>= Map.lookup direction   
 
