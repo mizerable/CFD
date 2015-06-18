@@ -266,7 +266,7 @@ writeTerms terms =
   
 testPosition =   Position 1 1 0 0
     
-makeRows :: [[a]] -> [a]-> [a] -> Int -> Int-> [[a]]    
+makeRows :: [[Double]] -> [Double]-> [Double] -> Int -> Int-> [[Double]]    
 makeRows whole curr [] _ _ = whole ++ [curr]    
 makeRows whole curr items 0 width = makeRows (whole ++ [curr] ) [] items width width          
 makeRows whole curr (x:xs) r width= makeRows whole (curr++[x]) xs (r-1) width   

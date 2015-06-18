@@ -1,19 +1,27 @@
 module GeometryStuff where
 
-type TwoDShape = [(Int,Int)]
-type TwoDPoint = (Int,Int)
+import qualified Data.Set as Set
+import SolutionDomain 
 
-data Quadrant = NE | SE | NW | SW 
+type FlowOb = ([Position],Position)
 
-isInterior :: TwoDShape -> TwoDPoint -> Bool
-isInterior shapeList (x,y) = undefined
+--the bounds are NOT in the result. 
+fillObInterior :: Set.Set Position -> Position -> [Position]
+fillObInterior obBounds point = 
+    let neighbors = map (offsetPosition point) enumFrom East
+        unvisitedNeighbors = 
+            filter (x-> (x != point) && Set.notMember x obBounds) neighbors
+    in point --i think the strictness of foldl' is important here
+        : foldl' (\prev next -> prev ++ fillObInterior (Set.inert point obBounds) next) 
+            [] unvisitedNeighbors
+        
+connectTwo p1 p2 allPos = 
+    let isBetween testPt = undefined -- involves solving for intersection of lines of sides inside the interval of the cell.
+    in filter isBetween allPos
 
+connectBounds :: [Position] -> [Position] -> [Position]
+connectBounds allPos points = fst $ foldl' 
+    (\(prevPts, lastPt) next -> ( prevPts ++ connectTwo lastPt next allPos, next) ) 
+    ([],last points) points
 
-getSector :: TwoDPoint -> TwoDPoint -> TwoDPoint -> Int 
-getSector (x1,y1) (x2, y2) (xp, yp) = 
-    let westPoint = if x1 < x2 then (x1,y1) else (x2,y2)
-        eastPoint = if fst westPoint == x1 then (x2,y2) else (x1,y1) 
-    in undefined
-    
-combineQuadrants :: Quadrant  -> Quadrant -> Int
-combineQuadrants eastQ westQ = undefined
+-- for 3D shapes (and maybe more) you would give the corner points then they would be connected and then all the points on those new edges are connected to each other etc... 
