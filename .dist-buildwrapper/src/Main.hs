@@ -10,6 +10,11 @@ import CalculusUtils
 import GeometryStuff
 import Data.List
 
+import qualified Graphics.Gnuplot.Graph as Graph
+import qualified Graphics.Gnuplot.Frame as Frame
+import qualified Graphics.Gnuplot.Frame.OptionSet as Opts
+import qualified Graphics.Gnuplot.Frame.Option as Opt
+import qualified Graphics.Gnuplot.Frame.OptionSet.Style as OptsStyle
 import qualified Graphics.Gnuplot.Advanced as GP
 import qualified Graphics.Gnuplot.Plot.TwoDimensional as Plot2D
 import qualified Graphics.Gnuplot.Graph.TwoDimensional as Graph2D
@@ -19,16 +24,16 @@ import Graphics.Gnuplot.Terminal.PNG as PNG
 instance Par.NFData Property 
 instance Par.NFData Position
 
-defaultInflow:: (Num a, Fractional a) => a
+defaultInflow:: Double
 defaultInflow = 1
 
-gasConstantR :: (Num a, Fractional a) => a
+gasConstantR :: Double
 gasConstantR = 8.314
 
-specificHeatCp :: (Num a, Fractional a ) => a
+specificHeatCp :: Double
 specificHeatCp = gasConstantR + specificHeatCv
 
-heatConductivityK:: (Num a, Fractional a ) => a
+heatConductivityK:: Double
 heatConductivityK = 0.1
 
 orthogonalSides:: Side ->[Side]
@@ -223,22 +228,35 @@ runSingleStep prev _ =
 runTimeSteps :: ValSet Double
 runTimeSteps = (\x -> foldl'  runSingleStep x [0..25] ) $! initialGrid  
  
-plotDomain :: [[Double]]-> Plot2D.T Int Int
+defltOpts :: Graph.C graph => Opts.T graph
+defltOpts =
+   Opts.key False $
+   Opts.deflt
+    
+plotDomain :: [[Double]]-> Frame.T ( Graph2D.T Int Int)
 plotDomain grid = 
-    Plot2D.function Graph2D.image 
-        (liftM2 (,) [0..length grid -1 ] [0.. length (head grid) -1 ]) 
+    let xsize = length (head grid)-1 
+        ysize = length  grid  -1
+        printSize = (show $ xsize * 5)++","++(show $ ysize * 5)
+    in Frame.cons 
+            ( Opts.add ( 
+                Opt.custom "terminal pngcairo size" printSize) [printSize] $ 
+                Opts.sizeRatio ((fromIntegral xsize)/(fromIntegral ysize)) $ defltOpts )
+            --(Opts.sizeRatio ((fromIntegral xsize)/(fromIntegral ysize)) $ defltOpts)
+        $ Plot2D.function Graph2D.image 
+        (liftM2 (,)  [0..ysize] [0..xsize]) 
             $ \(x,y) -> (grid!!x)!!y
              
 runTimeSteps_Print =
     foldM_
         (\prev step -> do
             let timeLevel = timePos $ head $ calculatedPositions prev
-            GP.plotAsync ( PNG.cons $ "c:\\temp\\"++ (show step) ++".png") 
-                $! plotDomain $! valSetToGrid prev timeLevel U (1+maxPos X)
+            GP.plot ( PNG.cons $ "c:\\temp\\"++ (show step) ++".png") 
+                $! plotDomain $! valSetToGrid prev timeLevel U (1+maxPos Y)
             putStrLn $ show $ length (calculatedPositions prev)
             putStrLn $ "step: " ++ show step 
             putStrLn $ "timeLevel: " ++ show timeLevel
-            putStrLn $ stringDomain U timeLevel (1 + maxPos X) prev
+            putStrLn $ stringDomain U timeLevel (1 + maxPos Y) prev
             return $! runSingleStep prev ()
         )
         initialGrid

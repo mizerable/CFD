@@ -6,24 +6,6 @@ import qualified Data.Map.Strict as Map
 import Control.Monad.Reader as Reader
 import Data.List
 
-
-timeStep :: (Num a,Fractional a) => a            
-timeStep = 0.005
-
-specificHeatCv :: (Num a) => a
-specificHeatCv = 15
-
--- sideArea:: (Num a, Fractional a)=>Side -> Position -> a
-sideArea s (Position p d _) = case s of 
-    Now -> 1
-    Prev -> 1
-    _ -> fromJust $! Map.lookup (Position p d 0) (areaVal $! initialGrid)  >>= Map.lookup s    
-
--- sideLength:: (Num a, Fractional a) => Direction -> Position ->  a
-sideLength direction (Position p d _) = case direction of 
-    Time -> timeStep
-    _ -> fromJust $! Map.lookup (Position p d 0) (sideLen $! initialGrid) >>= Map.lookup direction   
-
 boundaryPair:: Direction -> (Side,Side)
 boundaryPair d = case d of 
      X -> (East,West)

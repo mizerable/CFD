@@ -6,6 +6,7 @@ import qualified Data.Set as Set
 import Data.Maybe
 import Control.Monad.Reader as Reader
 import Data.List
+import GeometryStuff
 
 data Side =  Now | Prev |East | West | North | South | Top | Bottom | Center deriving (Show,Eq,Ord, Enum)
   
@@ -40,6 +41,12 @@ instance Functor Term  where
          Unknown u -> Unknown $ f u
          _ -> undefined    
 
+timeStep :: Double            
+timeStep = 0.005
+
+specificHeatCv :: Double
+specificHeatCv = 15
+
 storedSteps:: Int
 storedSteps = 4
 
@@ -54,27 +61,37 @@ removeItems  :: (Ord a, Eq a)=> [a] -> [a]-> [a]
 removeItems orig remove= 
     let removeSet = Set.fromList remove
     in filter ( `Set.notMember` removeSet) orig      
-           
-wallPositionsVals :: ValSet Double
-wallPositionsVals = ValSet 
-     (obstacle : inflowPositions)
-     Map.empty 
-     Map.empty Map.empty 
 
 wallPositions :: [Position]
-wallPositions = calculatedPositions wallPositionsVals
+wallPositions = (obstacles ++ inflowPositions)
 
 wallPositionsSet :: Set.Set Position
 wallPositionsSet = Set.fromList $! wallPositions 
 
+obstacle :: Position
 obstacle = Position [quot (maxPos X)  3,  quot (maxPos Y) 2, 0] 3 0
 
-obstacles = [obstacle]
+squareBoundsPts :: [Position]
+squareBoundsPts = [
+    obstacle
+    , Position [(quot (maxPos X)  3 ),  (quot (maxPos Y) 2 )+ 3, 0] 3 0
+    , Position [(quot (maxPos X)  3 )+ 3,  (quot (maxPos Y) 2 ) + 3, 0] 3 0
+    , Position [(quot (maxPos X)  3 ) + 6 ,  (quot (maxPos Y) 2 )+ 3, 0] 3 0
+    , Position [(quot (maxPos X)  3) + 6,  (quot (maxPos Y) 2), 0] 3 0
+    , Position [(quot (maxPos X)  3) + 6,  (quot (maxPos Y) 2 )- 3, 0] 3 0
+    , Position [(quot (maxPos X)  3) + 3,  (quot (maxPos Y) 2) - 3, 0] 3 0
+    , Position [(quot (maxPos X)  3),  (quot (maxPos Y) 2 - 3), 0] 3 0
+    ] 
+
+squareBounds :: [Position] 
+squareBounds = connectBounds makeAllPositions squareBoundsPts
+
+obstacles :: [Position]
+obstacles = squareBoundsPts -- ++ (fillObInterior (Set.fromList squareBounds) $! offsetPosition obstacle East)
 
 initialGrid:: ValSet Double
 initialGrid= 
-    let p = makeAllPositions
-        vMap = foldl' (\prev next -> Map.insert next 
+    let vMap = foldl' (\prev next -> Map.insert next 
             (case next of 
                 U-> 1
                 V-> 0
@@ -85,14 +102,14 @@ initialGrid=
             prev) Map.empty (enumFrom U)
         avMap = foldl' (\prev next -> Map.insert next 1 $! prev) Map.empty $!  enumFrom East
         slMap = foldl' (\prev next -> Map.insert next 1 $! prev) Map.empty $! enumFrom X
-        v = foldl' (\prev next -> Map.insert next vMap $! prev) Map.empty  $!  p
-        av = foldl' (\prev next -> Map.insert next avMap $! prev) Map.empty $!  p
-        sl = foldl' (\prev next -> Map.insert next slMap $! prev) Map.empty $!  p
-        calcPos = removeItems p $! wallPositions
+        v = foldl' (\prev next -> Map.insert next vMap $! prev) Map.empty  $!  makeAllPositions
+        av = foldl' (\prev next -> Map.insert next avMap $! prev) Map.empty $! makeAllPositions
+        sl = foldl' (\prev next -> Map.insert next slMap $! prev) Map.empty $! makeAllPositions
+        calcPos = removeItems makeAllPositions $! wallPositions
     in foldl'
         (\prev next -> setVal prev next U 0.0)
         (ValSet calcPos v av sl)
-        obstacles
+         $! obstacles
         
 setVal:: ValSet a -> Position -> Property -> a -> ValSet a
 setVal (ValSet p v av sl) pos property newVal = 
@@ -223,4 +240,57 @@ prop property position side env =
         --res p = getVal (positionIfWall p) (vals $! envIfWall p env )
         res p = getVal p (vals env )
     in average [ res position, res neighbor]
+
+-- GEOMETRY STUFF 
+
+--the bounds are NOT in the result. 
+fillObInterior :: Set.Set Position -> Position -> [Position]
+fillObInterior obBounds point = 
+    let neighbors = map (offsetPosition point) $ enumFrom East
+        unvisitedNeighbors = 
+            filter (\x-> x /= point && Set.notMember x obBounds) neighbors
+    in point --i think the strictness of foldl' is important here
+        : foldl' (\prev next -> prev ++ fillObInterior (Set.insert point obBounds) next) 
+            [] unvisitedNeighbors
+        
+distanceSquared :: Position -> Position -> Double        
+distanceSquared p1 p2 = 
+    fromIntegral $
+    foldl' (\prev next -> 
+            let diff = (getPositionComponent p1 next) - (getPositionComponent p2 next) 
+            in prev + ( diff * diff )      
+        ) 0 $ enumFrom X         
+    
+distance p1 p2 = sqrt $ distanceSquared p1 p2 
+        
+connectTwo p1 p2 allPos = 
+    let isBetween testPt = 
+            let aSq = distanceSquared p1 testPt
+                bSq = distanceSquared p2 testPt
+                cSq = distanceSquared p1 p2
+                x = sqrt $ (aSq + bSq - cSq ) / 2
+                cornerDist = sqrt $ 
+                    foldl' (\prev next ->
+                            let sl = sideLength next testPt 
+                            in prev + (sl*sl) 
+                        ) 1 (enumFrom X)
+            in cornerDist >= x
+    in filter isBetween allPos
+
+connectBounds :: [Position] -> [Position] -> [Position]
+connectBounds allPos points = fst $ foldl' 
+    (\(prevPts, lastPt) next -> ( prevPts ++ connectTwo lastPt next allPos, next) ) 
+    ([],last points) points
+
+
+-- sideArea:: (Num a, Fractional a)=>Side -> Position -> a
+sideArea s (Position p d _) = case s of 
+    Now -> 1
+    Prev -> 1
+    _ -> fromJust $! Map.lookup (Position p d 0) (areaVal $! initialGrid)  >>= Map.lookup s    
+
+-- sideLength:: (Num a, Fractional a) => Direction -> Position ->  a
+sideLength direction (Position p d _) = case direction of 
+    Time -> timeStep
+    _ -> fromJust $! Map.lookup (Position p d 0) (sideLen $! initialGrid) >>= Map.lookup direction   
 
