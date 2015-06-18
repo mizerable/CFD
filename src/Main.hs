@@ -251,12 +251,12 @@ runTimeSteps_Print =
     foldM_
         (\prev step -> do
             let timeLevel = timePos $ head $ calculatedPositions prev
-            GP.plot ( PNG.cons $ "c:\\temp\\"++ (show step) ++".png") 
+            GP.plotAsync ( PNG.cons $ "c:\\temp\\"++ (show step) ++".png") 
                 $! plotDomain $! valSetToGrid prev timeLevel U (1+maxPos Y)
             putStrLn $ show $ length (calculatedPositions prev)
             putStrLn $ "step: " ++ show step 
             putStrLn $ "timeLevel: " ++ show timeLevel
-            putStrLn $ stringDomain U timeLevel (1 + maxPos Y) prev
+            --putStrLn $ stringDomain U timeLevel (1 + maxPos Y) prev
             return $! runSingleStep prev ()
         )
         initialGrid
