@@ -14,15 +14,15 @@ specificHeatCv :: (Num a) => a
 specificHeatCv = 15
 
 -- sideArea:: (Num a, Fractional a)=>Side -> Position -> a
-sideArea s (Position x y z _) = case s of 
+sideArea s (Position p d _) = case s of 
     Now -> 1
     Prev -> 1
-    _ -> fromJust $! Map.lookup (Position x y z 0) (areaVal $! initialGrid)  >>= Map.lookup s    
+    _ -> fromJust $! Map.lookup (Position p d 0) (areaVal $! initialGrid)  >>= Map.lookup s    
 
 -- sideLength:: (Num a, Fractional a) => Direction -> Position ->  a
-sideLength d (Position x y z _) = case d of 
+sideLength direction (Position p d _) = case direction of 
     Time -> timeStep
-    _ -> fromJust $! Map.lookup (Position x y z 0) (sideLen $! initialGrid) >>= Map.lookup d   
+    _ -> fromJust $! Map.lookup (Position p d 0) (sideLen $! initialGrid) >>= Map.lookup direction   
 
 boundaryPair:: Direction -> (Side,Side)
 boundaryPair d = case d of 

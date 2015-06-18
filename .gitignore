@@ -1281,3 +1281,4 @@ Temporary Items
 .dist-buildwrapper/CFD.cabal
 .dist-buildwrapper/dist/setup-config
 *.bwinfo
+src/Main.exe

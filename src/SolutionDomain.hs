@@ -18,9 +18,8 @@ data Equation a = Equation{
 data IntegralType = Body | Surface deriving (Eq)
 data Property = U | V | W | Density | Temperature | Mew | Pressure deriving (Ord,Eq,Enum,Show)
 data Position = Position {
-    xPos:: !Int
-    ,yPos:: !Int
-    ,zPos:: !Int
+    spatialPos:: ![Int]
+    ,spatialDimens :: !Int 
     ,timePos:: !Int } deriving (Eq, Ord, Show)
 data ValSet a = ValSet{
     calculatedPositions:: ![Position]
@@ -46,8 +45,8 @@ storedSteps = 4
 
 maxPos:: Direction -> Int
 maxPos d = case d of 
-    X -> 15
-    Y -> 15
+    X -> 300
+    Y -> 100
     Z -> 0
     Time -> undefined
 
@@ -68,7 +67,7 @@ wallPositions = calculatedPositions wallPositionsVals
 wallPositionsSet :: Set.Set Position
 wallPositionsSet = Set.fromList $! wallPositions 
 
-obstacle = Position (quot (maxPos X)  3) (quot (maxPos Y) 2) 0 0
+obstacle = Position [quot (maxPos X)  3,  quot (maxPos Y) 2, 0] 3 0
 
 obstacles = [obstacle]
 
@@ -113,7 +112,7 @@ makePositions :: [Int] -> [Position]
 makePositions maxes =
     let ranges = map (\x -> map (:[]) [0..x] ) maxes 
         posCoords = foldl' cartProd [[]] ranges
-    in map (\coords -> Position (head coords) (coords!!1) (coords!!2) 0) posCoords
+    in map (\coords -> Position coords (length coords) 0) posCoords
               
 --mergeValSets :: (Num a, Fractional a) => ValSet a -> ValSet a-> ValSet a
 mergeValSets modifying base = foldl'
@@ -126,12 +125,13 @@ mergeValSets modifying base = foldl'
     base
     $! enumFrom U
 
+setElem newElem index list = 
+    map (\x -> if x == index then newElem else list!!x) [0..length list -1]
+
 modifyPositionComponent::Position -> Direction -> Int -> Position
-modifyPositionComponent (Position x y z t) direction amt= case direction of 
-    X -> Position amt y z t
-    Y -> Position x amt z t 
-    Z -> Position x y amt t
-    Time -> Position x y z amt
+modifyPositionComponent (Position p d t) direction amt= case direction of 
+    Time -> Position p d amt
+    _ -> Position (setElem amt (getDirectionComponentIndex direction) p) d t
 
 isUpperSide:: Side -> Bool
 isUpperSide side = case side of
@@ -154,12 +154,12 @@ directionFromCenter side = case side of
     Center -> undefined 
     
 offsetPosition:: Position->Side ->Position
-offsetPosition (Position x y z t) side = case side of
-    Center -> Position x y z t 
-    Now -> Position x y z t 
-    Prev -> Position x y z $! mod (t - 1) storedSteps  
+offsetPosition (Position p d t) side = case side of
+    Center -> Position p d t 
+    Now -> Position p d t 
+    Prev -> Position p d $! mod (t - 1) storedSteps  
     _ -> 
-        let position = Position x y z t
+        let position = Position p d t
             maxOrMin = if isUpperSide side then min else max
             offsetAmount = if isUpperSide side then 1 else (-1)
             direction = directionFromCenter side
@@ -169,12 +169,16 @@ offsetPosition (Position x y z t) side = case side of
         in modifyPositionComponent position direction 
             $ maxOrMin boundary $ getPositionComponent position direction + offsetAmount   
 
+getDirectionComponentIndex direction = case direction of
+    X -> 0
+    Y -> 1
+    Z -> 2
+    _ -> error "not defined or not added dimension"
+
 getPositionComponent:: Position -> Direction -> Int
-getPositionComponent (Position x y z t) d = case d of 
-    X -> x
-    Y -> y
-    Z -> z
+getPositionComponent (Position p d t) direction = case direction of 
     Time -> t
+    _ -> p!!(getDirectionComponentIndex direction)
 
 average::(Num a, Fractional a) => [a]->a
 average terms =
@@ -182,11 +186,11 @@ average terms =
         f p n= p + n / len
     in foldl' f 0 terms
 
-positionIfWall (Position x y z t) = if Set.member (Position x y z 0) wallPositionsSet
-    then Position x y z 0
-    else Position x y z t
+positionIfWall (Position p d t) = if Set.member (Position p d 0) wallPositionsSet
+    then Position p d 0
+    else Position p d t
     
-envIfWall (Position x y z _) env = if Set.member (Position x y z 0) wallPositionsSet
+envIfWall (Position p d _) env = if Set.member (Position p d 0) wallPositionsSet
     then id $! initialGrid
     else env       
 
@@ -194,9 +198,11 @@ envIfWall (Position x y z _) env = if Set.member (Position x y z 0) wallPosition
 prop property position side env = 
     let neighbor = offsetPosition position side
         noValError = error ("no value "
-                            ++ show (xPos position)++ " "
-                            ++ show (yPos position)++ " "
-                            ++ show (zPos position)++ " "
+                            ++ 
+                            (
+                                foldl' (\prev next -> prev ++ " " ++  (show $ (spatialPos position)!!next )) "" 
+                                    [0..spatialDimens position-1] 
+                            )++ " "
                             ++ show (timePos position)++ " "
                             ++ show property ++ " "
                             ++ show side)

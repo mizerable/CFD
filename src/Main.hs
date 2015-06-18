@@ -164,7 +164,7 @@ getDiscEqInstance:: Equation (Position -> [Term a]) -> Position -> Equation (Ter
 getDiscEqInstance (Equation l r up) pos = Equation (concatMap (\t -> t pos) $! l) (concatMap (\t -> t pos) $! r) up
     
 advanceTime :: Position -> Position
-advanceTime (Position x y z t ) = Position x y z $! mod (t+1) storedSteps     
+advanceTime (Position p d t ) = Position p d $! mod (t+1) storedSteps     
     
 --applyDiffEq :: (Fractional a, NFData a)=> ValSet a -> Equation (Position -> [Term a]) -> Bool-> [ (Position,Property,a,Bool)]    
 applyDiffEq (eq, saveAtNextTime,getPos) env =
@@ -242,7 +242,7 @@ runTimeSteps_Print =
             return $! runSingleStep prev ()
         )
         initialGrid
-        [0..50]
+        [0..99999]
  
 testTerms = [Unknown 2.4, Constant 1.2, Constant 3.112, Unknown (-0.21),  SubExpression (Expression [Constant 2, Constant 2, SubExpression (Expression [Unknown 0.33333])])]
 
@@ -264,7 +264,7 @@ writeTerms terms =
     let (_:_:xs) =  reverse $! writeTermsOrig terms 
     in reverse xs
   
-testPosition =   Position 1 1 0 0
+testPosition =   Position [1, 1, 0] 3 0
     
 makeRows :: [[Double]] -> [Double]-> [Double] -> Int -> Int-> [[Double]]    
 makeRows whole curr [] _ _ = whole ++ [curr]    
@@ -273,7 +273,7 @@ makeRows whole curr (x:xs) r width= makeRows whole (curr++[x]) xs (r-1) width
 
 valSetToGrid vs timeLevel property rowLength =
     let positions = map 
-            (\(Position x y z _) -> Position x y z timeLevel)
+            (\(Position p d _) -> Position p d timeLevel)
             makeAllPositions
     in makeRows [] [] 
             (map (\next -> prop property next Center vs )  positions )
@@ -289,7 +289,7 @@ stringDomain property timeLevel rowLength set =
 main:: IO()
 main = 
     putStrLn "starting ..... "
-    >>= (\_-> print ( solveUnknown testEquation $ Position 0 0 0 0)) 
+    >>= (\_-> print ( solveUnknown testEquation $ Position [0, 0, 0] 3 0)) 
     >>= (\_ -> putStrLn $ writeTerms $ distributeMultiply testTerms 2)
     >>= (\_ -> print $ prop U testPosition Center  initialGrid)
     >>= (\_ -> putStrLn " continuity ------------ ")
