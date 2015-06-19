@@ -99,12 +99,11 @@ squareBounds = connectBounds makeAllPositions squareBoundsPts
 
 obstacles :: [Position]
 obstacles = 
-    let filled =  fillObInterior (Set.fromList squareBounds) $! offsetPosition obstacle East
-        obWithGaps = squareBounds ++ filled
-        filledGaps = fillEnclosedGaps makeAllPositions $ Set.fromList obWithGaps
+    let filled =  fillObInterior (Set.fromList squareBounds) $! [offsetPosition obstacle East]
+        filledGaps = fillEnclosedGaps makeAllPositions $ Set.fromList filled
     in  --squareBoundsPts
         --squareBounds
-        obWithGaps-- ++ filledGaps
+        filled ++ filledGaps
 
 initialGridPre:: ValSet Double
 initialGridPre= 
@@ -265,13 +264,13 @@ prop property position side env =
     in average [ res position, res neighbor]
 
 -- GEOMETRY STUFF 
-
---the bounds are NOT in the result. 
-fillObInterior :: Set.Set Position -> Position -> [Position]
-fillObInterior obBounds point = 
-    let unvN= head $
-            filter (`Set.notMember` obBounds) $ getNeighbors point
-    in point : fillObInterior (Set.insert point obBounds) unvN
+ 
+fillObInterior :: Set.Set Position -> [Position] -> [Position]
+fillObInterior obBounds points = case points of
+    [] -> Set.toList obBounds
+    x:xs -> 
+        let unvN = filter (`Set.notMember` obBounds) $ getNeighbors x
+        in fillObInterior (Set.union obBounds $ Set.fromList unvN) $ xs ++ unvN
         
 distanceSquared :: Position -> Position -> Double        
 distanceSquared p1 p2 = 
