@@ -42,7 +42,7 @@ instance Functor Term  where
          _ -> undefined    
 
 timeStep :: Double            
-timeStep = 0.001
+timeStep = 0.011
 
 specificHeatCv :: Double
 specificHeatCv = 15
@@ -52,10 +52,17 @@ storedSteps = 4
 
 maxPos:: Direction -> Int
 maxPos d = case d of 
-    X -> 900
-    Y -> 300
+    X -> 600
+    Y -> 200
     Z -> 0
     Time -> undefined
+
+boundaryPair:: Direction -> (Side,Side)
+boundaryPair d = case d of 
+     X -> (East,West)
+     Y -> (North,South)
+     Z -> (Top,Bottom)
+     Time -> (Now,Now) -- we don't use the previous time step, actually it's more like (future ,now)  but we don't have a future
 
 removeItems  :: (Ord a, Eq a)=> [a] -> [a]-> [a]
 removeItems orig remove= 
@@ -69,35 +76,41 @@ wallPositionsSet :: Set.Set Position
 wallPositionsSet = Set.fromList $! wallPositions 
 
 obstacle :: Position
-obstacle = Position [quot (maxPos X)  3,  quot (maxPos Y) 2, 0] 3 0
+obstacle = Position [quot (maxPos X)  4,  quot (maxPos Y) 2, 0] 3 0
 
-obstacle2 = Position [(quot (maxPos X)  3 ),  (quot (maxPos Y) 2 )+ 5, 0] 3 0
+obstacle2 = Position [(quot (maxPos X)  4 ),  (quot (maxPos Y) 2 )+ 5, 0] 3 0
 
-obstacle3 = Position [(quot (maxPos X)  3 ),  (quot (maxPos Y) 2 )+ 2, 0] 3 0
+obstacle3 = Position [(quot (maxPos X)  4 ),  (quot (maxPos Y) 2 )+ 2, 0] 3 0
 
 squareBoundsPts :: [Position]
 squareBoundsPts = [
     obstacle
-    , Position [(quot (maxPos X)  3 ),  (quot (maxPos Y) 2 )+ 3, 0] 3 0
-    , Position [(quot (maxPos X)  3 )+ 3,  (quot (maxPos Y) 2 ) + 3, 0] 3 0
-    , Position [(quot (maxPos X)  3 ) + 6 ,  (quot (maxPos Y) 2 )+ 3, 0] 3 0
-    , Position [(quot (maxPos X)  3) + 6,  (quot (maxPos Y) 2), 0] 3 0
-    , Position [(quot (maxPos X)  3) + 6,  (quot (maxPos Y) 2 )- 3, 0] 3 0
-    , Position [(quot (maxPos X)  3) + 3,  (quot (maxPos Y) 2) - 3, 0] 3 0
-    , Position [(quot (maxPos X)  3),  (quot (maxPos Y) 2 - 3), 0] 3 0
+    , Position [(quot (maxPos X)  4 ),  (quot (maxPos Y) 2 )+ 5, 0] 3 0
+    --, Position [(quot (maxPos X)  4 )+ 5,  (quot (maxPos Y) 2 ) + 5, 0] 3 0
+    , Position [(quot (maxPos X)  4 ) + 10 ,  (quot (maxPos Y) 2 )+ 5, 0] 3 0
+    --, Position [(quot (maxPos X)  4) + 10,  (quot (maxPos Y) 2), 0] 3 0
+    , Position [(quot (maxPos X)  4) + 10,  (quot (maxPos Y) 2 )- 5, 0] 3 0
+    --, Position [(quot (maxPos X)  4) + 5,  (quot (maxPos Y) 2) - 5, 0] 3 0
+    , Position [(quot (maxPos X)  4),  (quot (maxPos Y) 2 ) - 5, 0] 3 0
     ] 
 
 squareBounds :: [Position] 
 squareBounds = connectBounds makeAllPositions squareBoundsPts
 
 obstacles :: [Position]
-obstacles = squareBounds ++ (fillObInterior (Set.fromList squareBounds) $! offsetPosition obstacle East)
+obstacles = 
+    let filled =  fillObInterior (Set.fromList squareBounds) $! offsetPosition obstacle East
+        obWithGaps = squareBounds ++ filled
+        filledGaps = fillEnclosedGaps makeAllPositions $ Set.fromList obWithGaps
+    in  --squareBoundsPts
+        --squareBounds
+        obWithGaps-- ++ filledGaps
 
 initialGridPre:: ValSet Double
 initialGridPre= 
     let vMap = foldl' (\prev next -> Map.insert next 
             (case next of 
-                U-> 5.0
+                U-> 2.11
                 V-> 0
                 W-> 0
                 Density -> 1
@@ -256,12 +269,9 @@ prop property position side env =
 --the bounds are NOT in the result. 
 fillObInterior :: Set.Set Position -> Position -> [Position]
 fillObInterior obBounds point = 
-    let neighbors = map (offsetPosition point) $ enumFrom East
-        unvisitedNeighbors = 
-            filter (\x-> x /= point && Set.notMember x obBounds) neighbors
-    in point --i think the strictness of foldl' is important here
-        : foldl' (\prev next -> prev ++ fillObInterior (Set.insert point obBounds) next) 
-            [] unvisitedNeighbors
+    let unvN= head $
+            filter (`Set.notMember` obBounds) $ getNeighbors point
+    in point : fillObInterior (Set.insert point obBounds) unvN
         
 distanceSquared :: Position -> Position -> Double        
 distanceSquared p1 p2 = 
@@ -270,7 +280,8 @@ distanceSquared p1 p2 =
             let diff = (getPositionComponent p1 next) - (getPositionComponent p2 next) 
             in prev + ( diff * diff )      
         ) 0 $ enumFrom X         
-    
+        
+distance:: Position -> Position -> Double    
 distance p1 p2 = sqrt $ distanceSquared p1 p2 
         
 isBetween p1 p2 testPt = 
@@ -283,15 +294,58 @@ isBetween p1 p2 testPt =
                     let sl = sideLength next testPt 
                     in prev + (sl*sl) 
                 ) 0 (enumFrom X)
-    in cornerDist >= x        
+    in cornerDist > x
+        && testPt /= p1 && testPt /= p2        
         
 connectTwo p1 p2 allPos = filter (isBetween p1 p2) allPos
 
+getNeighbors position =
+    map (\x-> offsetPosition position x)  
+    $ filter (\x -> position /= (offsetPosition position x) ) $ enumFrom East
+
+tracePath g end path = 
+    let prev = Map.lookup end g
+    in case prev of
+        Nothing -> path
+        Just p -> if p == end 
+            then path 
+            else tracePath g p $ p:path  
+
+shortestPath :: [Position] -> Position -> Map.Map Position Position -> [Position]
+shortestPath q end g = case q of
+    [] -> error "problem in shortest path.. searched everything and wasn't found" 
+    x:xs ->  case x == end of 
+        True -> tracePath g end []
+        False ->
+            let n = filter (\y -> Map.notMember y g) $ getNeighbors x
+            in shortestPath (xs ++ n) end 
+                $ foldl' (\prev next -> Map.insert next x prev ) g n  
+            
 connectBounds :: [Position] -> [Position] -> [Position]
 connectBounds allPos points = fst $ foldl' 
-    (\(prevPts, lastPt) next -> ( prevPts ++ connectTwo lastPt next allPos, next) ) 
+    (\(prevPts, lastPt) next -> ( prevPts ++ shortestPath [lastPt] next (Map.insert lastPt lastPt Map.empty) , next) ) 
     ([],last points) points
 
+fillEnclosedGaps :: [Position] -> Set.Set Position -> [Position]
+fillEnclosedGaps allPos wallPos = 
+    let added = filter
+            (\x ->
+                let opposingWalls = foldl'
+                        (\prev next ->
+                            let (s1 ,s2) = boundaryPair next
+                            in prev ||
+                                ( Set.member (offsetPosition x s1) wallPos 
+                                    && Set.member (offsetPosition x s2) wallPos )
+                        )
+                        False
+                        $ enumFrom X
+                in (Set.notMember x wallPos)
+                    && opposingWalls
+            )
+            allPos
+    in case added of 
+        [] -> []
+        _ -> added ++ (fillEnclosedGaps allPos $ Set.union wallPos $ Set.fromList added) 
 
 -- sideArea:: (Num a, Fractional a)=>Side -> Position -> a
 sideArea s (Position p d _) = case s of 

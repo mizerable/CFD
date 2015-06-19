@@ -5,13 +5,6 @@ import Data.Maybe
 import qualified Data.Map.Strict as Map
 import Control.Monad.Reader as Reader
 import Data.List
-
-boundaryPair:: Direction -> (Side,Side)
-boundaryPair d = case d of 
-     X -> (East,West)
-     Y -> (North,South)
-     Z -> (Top,Bottom)
-     Time -> (Now,Now) -- we don't use the previous time step, actually it's more like (future ,now)  but we don't have a future
          
 direcDimenType:: Direction -> DimensionType
 direcDimenType direc = case direc of
