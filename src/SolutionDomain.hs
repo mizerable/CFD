@@ -1,3 +1,4 @@
+{-# LANGUAGE MultiParamTypeClasses #-}
 
 module SolutionDomain where
 
@@ -34,6 +35,12 @@ data Term a =
     | SubExpression {expression:: !(Expression a) }  
     | Derivative { denom:: !Direction ,function:: !(Position->Side->Term a), centered:: !Side, 
         multiplier:: !(Position->Side-> a) } 
+
+class Attrib a b where 
+    setAttrib:: ValSet b -> Position -> b -> ValSet b 
+    
+instance Attrib Property Double where
+    setAttrib = undefined
         
 instance Functor Term  where
     fmap f x = case x of
@@ -52,8 +59,8 @@ storedSteps = 4
 
 maxPos:: Direction -> Int
 maxPos d = case d of 
-    X -> 600
-    Y -> 200
+    X -> 450
+    Y -> 100
     Z -> 0
     Time -> undefined
 
@@ -132,11 +139,48 @@ initialGrid =
         (\prev next -> setVal prev next U 0.0)
         (ValSet calcPos v av sl)
          $! obstacles
-        
-setVal:: ValSet a -> Position -> Property -> a -> ValSet a
+
+upScaleGrid :: ValSet Double -> [Int] -> ValSet Double
+upScaleGrid smallGrid scales = foldl'
+    (\(ValSet p v av sl) next ->
+        let newp = p ++ undefined  
+            newv = undefined
+            newav = undefined
+            newsl = undefined
+        in ValSet newp newv newav newsl    
+    )
+    emptyValSet
+    (calculatedPositions smallGrid)
+
+upScalePosition :: Position -> Int -> Direction -> [Position]
+upScalePosition (Position p d t) scale direction = 
+    let idx = getDirectionComponentIndex direction
+        anchor = p!!idx
+    in map (\x -> Position (setElem (anchor + x) idx p) d t) [0.. scale - 1]
+    
+upScaleVals:: Position -> ValSet Double -> [Position] -> ValSet Double   
+upScaleVals oldPos vs newPoses = foldl'
+    (\prev1 nextProp ->
+        foldl'
+            (\prev2 nextPos -> setVal prev2 nextPos nextProp 
+                $ prop nextProp nextPos Center vs)
+            prev1
+            newPoses   
+    ) vs $ enumFrom U
+
+upScaleAV :: Position -> ValSet Double -> [Position] -> ValSet Double  
+upScaleAV oldPos vs newPoses = undefined  
+    
+emptyValSet :: ValSet Double    
+emptyValSet = ValSet [] Map.empty Map.empty Map.empty
+    
+setVal:: ValSet Double -> Position -> Property -> Double -> ValSet Double
 setVal (ValSet p v av sl) pos property newVal = 
-    let subDict = fromJust $ Map.lookup pos v  
+    let subDict = case Map.lookup pos v  of
+            Nothing -> Map.empty
+            Just sb -> sb
     in ValSet p (Map.insert pos (Map.insert property newVal subDict) v) av sl
+
     
 cartProd:: [[a]] -> [[a]] -> [[a]]
 cartProd xs ys = [ x ++ y | x <- xs, y <- ys]

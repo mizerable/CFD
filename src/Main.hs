@@ -183,18 +183,17 @@ applyDiffEq (eq, saveAtNextTime,getPos) env =
         ) (getPos env)
   
 -- applyResults ::  [(Position, Property, a,Bool)]-> ValSet a -> ValSet a
-applyResults res pushTime (ValSet p v av sl) = 
-    let newVals = foldl' 
+applyResults res pushTime vs = 
+    let (ValSet p v av sl) = foldl' 
             (\prev (pos,property,newVal,saveAtNextTime)  ->
                 let newPos = if saveAtNextTime 
                         then advanceTime pos 
                         else pos
-                    subdict = fromMaybe Map.empty (Map.lookup newPos prev)  
-                in Map.insert newPos (Map.insert property newVal subdict) prev
-            ) v res
+                in setVal prev newPos property newVal 
+            ) vs res
     in ValSet 
         (if pushTime then map advanceTime p else p) 
-        newVals av sl
+        v av sl
 
 -- calcSteps :: (Fractional a, RealFloat a)=>  [(Reader (ValSet a) (Equation (Position-> [Term a])) , Bool)]
 calcSteps = [ 
