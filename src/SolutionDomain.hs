@@ -1,13 +1,10 @@
-{-# LANGUAGE MultiParamTypeClasses #-}
-
+{-# LANGUAGE ScopedTypeVariables, RankNTypes #-}
 module SolutionDomain where
 
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import Data.Maybe
-import Control.Monad.Reader as Reader
 import Data.List
-import GeometryStuff
 
 data Side =  Now | Prev |East | West | North | South | Top | Bottom | Center deriving (Show,Eq,Ord, Enum)
   
@@ -35,12 +32,6 @@ data Term a =
     | SubExpression {expression:: !(Expression a) }  
     | Derivative { denom:: !Direction ,function:: !(Position->Side->Term a), centered:: !Side, 
         multiplier:: !(Position->Side-> a) } 
-
-class Attrib a b where 
-    setAttrib:: ValSet b -> Position -> b -> ValSet b 
-    
-instance Attrib Property Double where
-    setAttrib = undefined
         
 instance Functor Term  where
     fmap f x = case x of
@@ -168,8 +159,25 @@ upScaleVals oldPos vs newPoses = foldl'
             newPoses   
     ) vs $ enumFrom U
 
-upScaleAV :: Position -> ValSet Double -> [Position] -> ValSet Double  
-upScaleAV oldPos vs newPoses = undefined  
+upScaleAV :: Position -> ValSet Double -> [Position] -> Direction -> Double-> ValSet Double  
+upScaleAV oldPos vs newPoses direction scale= 
+    let (s1, s2) = boundaryPair direction
+    in foldl'
+        (\prev nextSide -> 
+            foldl'
+                (\prev2 nextPos ->
+                    let changeScale = if nextSide == s1 || nextSide == s2
+                            then 1 else scale -- for example, if i increase x resolution, then only east/west faces are unchanged
+                    in setFaceArea prev2 nextPos nextSide ( sideArea nextSide oldPos / changeScale) 
+                ) prev newPoses
+        ) vs $ enumFrom East
+    
+upScaleSL :: Position -> ValSet Double -> [Position] -> Direction -> Double ->ValSet Double
+upScaleSL oldPos vs newPoses direction scale = 
+    foldl'
+        (\prev nextPos -> 
+            setCellLength prev nextPos direction $ sideLength direction oldPos / scale
+        ) vs $ newPoses
     
 emptyValSet :: ValSet Double    
 emptyValSet = ValSet [] Map.empty Map.empty Map.empty
@@ -181,7 +189,20 @@ setVal (ValSet p v av sl) pos property newVal =
             Just sb -> sb
     in ValSet p (Map.insert pos (Map.insert property newVal subDict) v) av sl
 
+setFaceArea :: ValSet Double -> Position -> Side -> Double -> ValSet Double
+setFaceArea (ValSet p v av sl) pos side newVal = 
+    let subDict = case Map.lookup pos av  of
+            Nothing -> Map.empty
+            Just sb -> sb
+    in ValSet p v (Map.insert pos (Map.insert side newVal subDict) av) sl             
     
+setCellLength :: ValSet Double -> Position -> Direction -> Double -> ValSet Double
+setCellLength (ValSet p v av sl) pos dir newVal = 
+    let subDict = case Map.lookup pos sl  of
+            Nothing -> Map.empty
+            Just sb -> sb
+    in ValSet p v av (Map.insert pos (Map.insert dir newVal subDict) sl)
+        
 cartProd:: [[a]] -> [[a]] -> [[a]]
 cartProd xs ys = [ x ++ y | x <- xs, y <- ys]
 
