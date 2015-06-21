@@ -50,8 +50,8 @@ storedSteps = 4
 
 maxPos :: Direction -> Int
 maxPos  d = case d of 
-    X -> 450
-    Y -> 100
+    X -> 1350
+    Y -> 300
     Z -> 0
     Time -> undefined
     
@@ -61,6 +61,15 @@ gridSize d = case d of
     Y -> 100
     Z -> 1
     Time -> undefined
+
+cellLength d = gridSize d / (fromIntegral $ maxPos d + 1)
+
+coordToPos coords time = 
+    let dirs = enumFrom X
+    in Position 
+        (map (\x-> round $ coords!!x / (cellLength $ dirs!!x)  ) $ [0.. length coords -1] )
+        (length dirs)
+        time
 
 boundaryPair:: Direction -> (Side,Side)
 boundaryPair d = case d of 
@@ -93,7 +102,7 @@ wallPositionsSet :: Set.Set Position
 wallPositionsSet = Set.fromList $! wallPositions 
 
 obstacle :: Position
-obstacle = Position [quot (maxPos X)  4,  quot (maxPos Y) 2, 0] 3 0
+obstacle = coordToPos [gridSize X / 4 , gridSize Y / 2 , 0 ] 0
 
 obstacle2 = Position [(quot (maxPos X)  4 ),  (quot (maxPos Y) 2 )+ 5, 0] 3 0
 
@@ -101,14 +110,12 @@ obstacle3 = Position [(quot (maxPos X)  4 ),  (quot (maxPos Y) 2 )+ 2, 0] 3 0
 
 squareBoundsPts :: [Position]
 squareBoundsPts = [
-    obstacle
-    , Position [(quot (maxPos X)  4 ),  (quot (maxPos Y) 2 )+ 5, 0] 3 0
-    --, Position [(quot (maxPos X)  4 )+ 5,  (quot (maxPos Y) 2 ) + 5, 0] 3 0
-    , Position [(quot (maxPos X)  4 ) + 10 ,  (quot (maxPos Y) 2 )+ 5, 0] 3 0
-    --, Position [(quot (maxPos X)  4) + 10,  (quot (maxPos Y) 2), 0] 3 0
-    , Position [(quot (maxPos X)  4) + 10,  (quot (maxPos Y) 2 )- 5, 0] 3 0
-    --, Position [(quot (maxPos X)  4) + 5,  (quot (maxPos Y) 2) - 5, 0] 3 0
-    , Position [(quot (maxPos X)  4),  (quot (maxPos Y) 2 ) - 5, 0] 3 0
+   -- obstacle,
+   -- offsetPosition (coordToPos [gridSize X / 4 , gridSize Y / 2 , 0 ] 0) West,
+    coordToPos [gridSize X / 4 , gridSize Y / 2 + 5 , 0 ] 0
+    , coordToPos [gridSize X / 4 + 10, gridSize Y / 2 + 5 , 0 ] 0
+    , coordToPos [gridSize X / 4 + 10, gridSize Y / 2 - 5 , 0 ] 0
+    , coordToPos [gridSize X / 4 , gridSize Y / 2 - 5 , 0 ] 0
     ] 
 
 squareBounds :: [Position] 
@@ -139,7 +146,7 @@ initialGridPre=
                     ) $! prev
                 ) Map.empty $!  enumFrom East
         slMap = foldl' (\prev next -> 
-                    Map.insert next ( (gridSize next ) / (fromIntegral $ maxPos next + 1 ) ) $! prev
+                    Map.insert next (cellLength next ) $! prev
                 ) Map.empty $! enumFrom X
         v = foldl' (\prev next -> Map.insert next vMap $! prev) Map.empty  $!  makeAllPositions
         av = foldl' (\prev next -> Map.insert next avMap $! prev) Map.empty $! makeAllPositions
@@ -268,6 +275,10 @@ modifyPositionComponent::Position -> Direction -> Int -> Position
 modifyPositionComponent (Position p d t) direction amt= case direction of 
     Time -> Position p d amt
     _ -> Position (setElem amt (getDirectionComponentIndex direction) p) d t
+
+offsetPositionComponent pos dir amt =
+    let curVal = getPositionComponent pos dir
+    in modifyPositionComponent pos dir (curVal+amt)
 
 isUpperSide:: Side -> Bool
 isUpperSide side = case side of
