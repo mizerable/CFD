@@ -48,11 +48,18 @@ specificHeatCv = 15
 storedSteps:: Int
 storedSteps = 4
 
-maxPos:: Direction -> Int
-maxPos d = case d of 
+maxPos :: Direction -> Int
+maxPos  d = case d of 
     X -> 450
     Y -> 100
     Z -> 0
+    Time -> undefined
+    
+gridSize :: Direction -> Double
+gridSize d = case d of 
+    X -> 450
+    Y -> 100
+    Z -> 1
     Time -> undefined
 
 boundaryPair:: Direction -> (Side,Side)
@@ -61,6 +68,18 @@ boundaryPair d = case d of
      Y -> (North,South)
      Z -> (Top,Bottom)
      Time -> (Now,Now) -- we don't use the previous time step, actually it's more like (future ,now)  but we don't have a future
+
+faceToDirections :: Side -> [Direction] 
+faceToDirections s = case s of
+    East -> [Y,Z]
+    West -> [Y,Z]
+    North -> [X,Z]
+    South -> [X,Z]
+    Top -> [X,Y]
+    Bottom -> [X,Y]
+    Now -> undefined
+    Prev -> undefined
+    Center -> enumFrom X
 
 removeItems  :: (Ord a, Eq a)=> [a] -> [a]-> [a]
 removeItems orig remove= 
@@ -114,14 +133,20 @@ initialGridPre=
                 _-> 1
                 ) 
             prev) Map.empty (enumFrom U)
-        avMap = foldl' (\prev next -> Map.insert next 1 $! prev) Map.empty $!  enumFrom East
-        slMap = foldl' (\prev next -> Map.insert next 1 $! prev) Map.empty $! enumFrom X
+        avMap = foldl' (\prev next ->
+                    Map.insert next (
+                        foldl' (\prev2 next2 -> prev2 * (fromJust $ Map.lookup next2 slMap) ) 1 $ faceToDirections next 
+                    ) $! prev
+                ) Map.empty $!  enumFrom East
+        slMap = foldl' (\prev next -> 
+                    Map.insert next ( (gridSize next ) / (fromIntegral $ maxPos next + 1 ) ) $! prev
+                ) Map.empty $! enumFrom X
         v = foldl' (\prev next -> Map.insert next vMap $! prev) Map.empty  $!  makeAllPositions
         av = foldl' (\prev next -> Map.insert next avMap $! prev) Map.empty $! makeAllPositions
         sl = foldl' (\prev next -> Map.insert next slMap $! prev) Map.empty $! makeAllPositions
     in ValSet makeAllPositions v av sl 
     
-initialGridUnscaled = 
+initialGrid = 
     let calcPos = removeItems (calculatedPositions initialGridPre) $! wallPositions
         v= vals initialGridPre
         av = areaVal initialGridPre
@@ -131,9 +156,6 @@ initialGridUnscaled =
         (ValSet calcPos v av sl)
          $! obstacles
          
-initialGrid =  (\grid -> upScaleGrid grid 3 X)-- .(\grid -> upScaleGrid grid 3 Y) 
-    $ initialGridUnscaled
-
 upScaleGrid :: ValSet Double -> Int ->Direction -> ValSet Double
 upScaleGrid smallGrid scale direction = 
     foldl'
@@ -159,7 +181,8 @@ upScaleVals oldPos oldGrid vs newPoses = foldl'
     (\prev1 nextProp ->
         foldl'
             (\prev2 nextPos -> setVal prev2 nextPos nextProp 
-                $ prop nextProp oldPos Center oldGrid)
+                $ fromMaybe (error $ "couldn't get while upscaling " ++ show oldPos ++" "++ show nextProp)
+                    $ Map.lookup oldPos (vals oldGrid) >>= Map.lookup nextProp)
             prev1
             newPoses   
     ) vs $ enumFrom U
@@ -180,9 +203,13 @@ upScaleAV oldPos oldGrid vs newPoses direction scale=
 upScaleSL :: Position ->  ValSet Double ->ValSet Double -> [Position] -> Direction -> Double ->ValSet Double
 upScaleSL oldPos oldGrid vs newPoses direction scale = 
     foldl'
-        (\prev nextPos -> 
-            setCellLength prev nextPos direction $ sideLength direction oldPos oldGrid / scale
-        ) vs $ newPoses
+        (\prev0 nextDir ->
+            foldl'
+                (\prev nextPos -> 
+                    let changeScale = if nextDir == direction then scale else 1
+                    in setCellLength prev nextPos nextDir $ sideLength nextDir oldPos oldGrid / changeScale
+                ) prev0 $ newPoses
+        ) vs $ enumFrom X
     
 emptyValSet :: ValSet Double    
 emptyValSet = ValSet [] Map.empty Map.empty Map.empty
