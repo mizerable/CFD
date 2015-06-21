@@ -121,7 +121,7 @@ initialGridPre=
         sl = foldl' (\prev next -> Map.insert next slMap $! prev) Map.empty $! makeAllPositions
     in ValSet makeAllPositions v av sl 
     
-initialGrid = 
+initialGridUnscaled = 
     let calcPos = removeItems (calculatedPositions initialGridPre) $! wallPositions
         v= vals initialGridPre
         av = areaVal initialGridPre
@@ -130,37 +130,41 @@ initialGrid =
         (\prev next -> setVal prev next U 0.0)
         (ValSet calcPos v av sl)
          $! obstacles
+         
+initialGrid =  (\grid -> upScaleGrid grid 3 X).(\grid -> upScaleGrid grid 3 Y) $ initialGridUnscaled
 
-upScaleGrid :: ValSet Double -> [Int] -> ValSet Double
-upScaleGrid smallGrid scales = foldl'
-    (\(ValSet p v av sl) next ->
-        let newp = p ++ undefined  
-            newv = undefined
-            newav = undefined
-            newsl = undefined
-        in ValSet newp newv newav newsl    
-    )
-    emptyValSet
-    (calculatedPositions smallGrid)
+upScaleGrid :: ValSet Double -> Int ->Direction -> ValSet Double
+upScaleGrid smallGrid scale direction = 
+    foldl'
+        (\vs nextPos ->
+            let newp =  upScalePosition nextPos scale direction
+                (ValSet p newv newav newsl ) = 
+                    (\env -> upScaleVals nextPos smallGrid env newp)
+                    .(\env -> upScaleAV nextPos smallGrid env newp direction $ fromIntegral scale)
+                    .(\env -> upScaleSL nextPos smallGrid env newp direction $ fromIntegral scale) 
+                         $ vs
+            in ValSet (newp ++ p) newv newav newsl -- tail because the first is duplicated    
+        ) emptyValSet
+        (calculatedPositions smallGrid)
 
 upScalePosition :: Position -> Int -> Direction -> [Position]
 upScalePosition (Position p d t) scale direction = 
     let idx = getDirectionComponentIndex direction
         anchor = p!!idx
-    in map (\x -> Position (setElem (anchor + x) idx p) d t) [0.. scale - 1]
+    in map (\x -> Position (setElem (anchor*scale + x) idx p) d t) [0.. scale-1]
     
-upScaleVals:: Position -> ValSet Double -> [Position] -> ValSet Double   
-upScaleVals oldPos vs newPoses = foldl'
+upScaleVals:: Position -> ValSet Double -> ValSet Double -> [Position] -> ValSet Double   
+upScaleVals oldPos oldGrid vs newPoses = foldl'
     (\prev1 nextProp ->
         foldl'
             (\prev2 nextPos -> setVal prev2 nextPos nextProp 
-                $ prop nextProp nextPos Center vs)
+                $ prop nextProp oldPos Center oldGrid)
             prev1
             newPoses   
     ) vs $ enumFrom U
 
-upScaleAV :: Position -> ValSet Double -> [Position] -> Direction -> Double-> ValSet Double  
-upScaleAV oldPos vs newPoses direction scale= 
+upScaleAV :: Position -> ValSet Double -> ValSet Double -> [Position] -> Direction -> Double-> ValSet Double  
+upScaleAV oldPos oldGrid vs newPoses direction scale= 
     let (s1, s2) = boundaryPair direction
     in foldl'
         (\prev nextSide -> 
@@ -168,15 +172,15 @@ upScaleAV oldPos vs newPoses direction scale=
                 (\prev2 nextPos ->
                     let changeScale = if nextSide == s1 || nextSide == s2
                             then 1 else scale -- for example, if i increase x resolution, then only east/west faces are unchanged
-                    in setFaceArea prev2 nextPos nextSide ( sideArea nextSide oldPos / changeScale) 
+                    in setFaceArea prev2 nextPos nextSide ( sideArea nextSide oldPos oldGrid / changeScale) 
                 ) prev newPoses
         ) vs $ enumFrom East
     
-upScaleSL :: Position -> ValSet Double -> [Position] -> Direction -> Double ->ValSet Double
-upScaleSL oldPos vs newPoses direction scale = 
+upScaleSL :: Position ->  ValSet Double ->ValSet Double -> [Position] -> Direction -> Double ->ValSet Double
+upScaleSL oldPos oldGrid vs newPoses direction scale = 
     foldl'
         (\prev nextPos -> 
-            setCellLength prev nextPos direction $ sideLength direction oldPos / scale
+            setCellLength prev nextPos direction $ sideLength direction oldPos oldGrid / scale
         ) vs $ newPoses
     
 emptyValSet :: ValSet Double    
@@ -348,20 +352,20 @@ distanceSquared p1 p2 =
 distance:: Position -> Position -> Double    
 distance p1 p2 = sqrt $ distanceSquared p1 p2 
         
-isBetween p1 p2 testPt = 
+isBetween p1 p2 testPt vs= 
     let aSq = distanceSquared p1 testPt
         bSq = distanceSquared p2 testPt
         cSq = distanceSquared p1 p2
         x = sqrt $ (aSq + bSq - cSq ) / 2
         cornerDist = sqrt $ 
             foldl' (\prev next ->
-                    let sl = sideLength next testPt 
+                    let sl = sideLength next testPt vs
                     in prev + (sl*sl) 
                 ) 0 (enumFrom X)
     in cornerDist > x
         && testPt /= p1 && testPt /= p2        
         
-connectTwo p1 p2 allPos = filter (isBetween p1 p2) allPos
+connectTwo p1 p2 allPos vs = filter (isBetween p1 p2 vs) allPos
 
 getNeighbors position =
     map (\x-> offsetPosition position x)  
@@ -412,13 +416,13 @@ fillEnclosedGaps allPos wallPos =
         _ -> added ++ (fillEnclosedGaps allPos $ Set.union wallPos $ Set.fromList added) 
 
 -- sideArea:: (Num a, Fractional a)=>Side -> Position -> a
-sideArea s (Position p d _) = case s of 
+sideArea s (Position p d _) vs = case s of 
     Now -> 1
     Prev -> 1
-    _ -> fromJust $! Map.lookup (Position p d 0) (areaVal $! initialGridPre)  >>= Map.lookup s    
+    _ -> fromJust $! Map.lookup (Position p d 0) (areaVal $! vs)  >>= Map.lookup s    
 
 -- sideLength:: (Num a, Fractional a) => Direction -> Position ->  a
-sideLength direction (Position p d _) = case direction of 
+sideLength direction (Position p d _) vs = case direction of 
     Time -> timeStep
-    _ -> fromJust $! Map.lookup (Position p d 0) (sideLen $! initialGridPre) >>= Map.lookup direction   
+    _ -> fromJust $! Map.lookup (Position p d 0) (sideLen $! vs) >>= Map.lookup direction   
 

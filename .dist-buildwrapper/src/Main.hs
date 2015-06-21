@@ -178,7 +178,7 @@ applyDiffEq (eq, saveAtNextTime,getPos) env =
         (\pos -> 
             let discEquation = getDiscEqInstance (runReader eq env) pos 
                 solvedProperty = unknownProperty discEquation
-                newValue = solveUnknown discEquation pos
+                newValue = solveUnknown discEquation pos env
             in ( pos, solvedProperty, newValue, saveAtNextTime)
         ) (getPos env)
   
@@ -267,18 +267,19 @@ testTerms = [Unknown 2.4, Constant 1.2, Constant 3.112, Unknown (-0.21),  SubExp
 testEq eq = getDiscEqInstance ( runReader eq $! initialGrid) testPosition 
             
 --writeTermsOrig:: (Num a, Show a, Fractional a)=> [Term a] -> String
-writeTermsOrig terms =
+writeTermsOrig terms vs=
     let writeTerm prev t= prev ++ case t of
             Unknown u -> show u ++ "X + "
             Constant c -> show c ++ " + "
-            SubExpression s -> writeTerms (getTerms s) ++ " + "
+            SubExpression s -> writeTerms (getTerms s) vs ++ " + "
             Derivative d _ side _-> 
-                "approxDeriv ( " ++ writeTerms [approximateDerivative t testPosition ] 
+                "approxDeriv ( " ++ writeTerms [approximateDerivative t testPosition vs] vs
                     ++ show d ++ " " ++ show  side ++" ) + " 
     in foldl' writeTerm " " (reverse terms )  
 
-writeTerms terms =
-    let (_:_:xs) =  reverse $! writeTermsOrig terms 
+writeTerms :: [Term Double] -> ValSet Double-> String
+writeTerms terms vs=
+    let (_:_:xs) =  reverse $! writeTermsOrig terms vs
     in reverse xs
   
 testPosition =   Position [1, 1, 0] 3 0
@@ -306,45 +307,45 @@ stringDomain property timeLevel rowLength set =
 main:: IO()
 main = 
     putStrLn "starting ..... "
-    >>= (\_-> print ( solveUnknown testEquation $ Position [0, 0, 0] 3 0)) 
-    >>= (\_ -> putStrLn $ writeTerms $ distributeMultiply testTerms 2)
+    >>= (\_-> print ( solveUnknown testEquation ( Position [0, 0, 0] 3 0) initialGrid )) 
+    >>= (\_ -> putStrLn $ writeTerms (distributeMultiply testTerms 2) initialGrid)
     >>= (\_ -> print $ prop U testPosition Center  initialGrid)
     >>= (\_ -> putStrLn " continuity ------------ ")
-    >>= (\_ -> putStrLn $ writeTerms $ rhs $ testEq continuity)
+    >>= (\_ -> putStrLn $ writeTerms ( rhs $ testEq continuity ) initialGrid )
     >>= (\_ -> putStrLn " = ")
-    >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq continuity)
+    >>= (\_ -> putStrLn $ writeTerms ( lhs $ testEq continuity) initialGrid )
     >>= (\_ -> putStrLn " solving... ")
-    >>= (\_ -> print $ solveUnknown (testEq continuity) testPosition)
+    >>= (\_ -> print $ solveUnknown (testEq continuity) testPosition initialGrid )
     >>= (\_ -> putStrLn " U Momentum------------ ")
-    >>= (\_ -> putStrLn $ writeTerms $ rhs $ testEq uMomentum)
+    >>= (\_ -> putStrLn $ writeTerms ( rhs $ testEq uMomentum ) initialGrid )
     >>= (\_ -> putStrLn " = ")
-    >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq uMomentum)
+    >>= (\_ -> putStrLn $ writeTerms ( lhs $ testEq uMomentum ) initialGrid )
     >>= (\_ -> putStrLn " solving... ")
-    >>= (\_ -> print $ solveUnknown (testEq uMomentum) testPosition)
+    >>= (\_ -> print $ solveUnknown (testEq uMomentum) testPosition initialGrid )
     >>= (\_ -> putStrLn " V Momentum------------ ")
-    >>= (\_ -> putStrLn $ writeTerms $ rhs $ testEq vMomentum)
+    >>= (\_ -> putStrLn $ writeTerms ( rhs $ testEq vMomentum ) initialGrid )
     >>= (\_ -> putStrLn " = ")
-    >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq vMomentum)
+    >>= (\_ -> putStrLn $ writeTerms ( lhs $ testEq vMomentum ) initialGrid )
     >>= (\_ -> putStrLn " solving... ")
-    >>= (\_ -> print $ solveUnknown (testEq vMomentum) testPosition)
+    >>= (\_ -> print $ solveUnknown (testEq vMomentum) testPosition initialGrid )
     >>= (\_ -> putStrLn " W Momentum------------ ")
-    >>= (\_ -> putStrLn $ writeTerms $ rhs $ testEq wMomentum)
+    >>= (\_ -> putStrLn $ writeTerms ( rhs $ testEq wMomentum ) initialGrid )
     >>= (\_ -> putStrLn " = ")
-    >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq wMomentum)
+    >>= (\_ -> putStrLn $ writeTerms ( lhs $ testEq wMomentum ) initialGrid ) 
     >>= (\_ -> putStrLn " solving... ")
-    >>= (\_ -> print $ solveUnknown (testEq wMomentum) testPosition)
+    >>= (\_ -> print $ solveUnknown (testEq wMomentum) testPosition initialGrid )
     >>= (\_ -> putStrLn " ENERGY ------------ ")
-    >>= (\_ -> putStrLn $ writeTerms $ rhs $ testEq energy)
+    >>= (\_ -> putStrLn $ writeTerms ( rhs $ testEq energy ) initialGrid )
     >>= (\_ -> putStrLn " = ")
-    >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq energy)
+    >>= (\_ -> putStrLn $ writeTerms ( lhs $ testEq energy ) initialGrid )
     >>= (\_ -> putStrLn " solving... ")
-    >>= (\_ -> print $ solveUnknown (testEq energy) testPosition)
+    >>= (\_ -> print $ solveUnknown (testEq energy) testPosition initialGrid )
     >>= (\_ -> putStrLn " Pressure ------------ ")
-    >>= (\_ -> putStrLn $ writeTerms $ rhs $ testEq gasLawPressure)
+    >>= (\_ -> putStrLn $ writeTerms ( rhs $ testEq gasLawPressure ) initialGrid )
     >>= (\_ -> putStrLn " = ")
-    >>= (\_ -> putStrLn $ writeTerms $ lhs $ testEq gasLawPressure)
+    >>= (\_ -> putStrLn $ writeTerms ( lhs $ testEq gasLawPressure ) initialGrid )
     >>= (\_ -> putStrLn " solving... ")
-    >>= (\_ -> print $ solveUnknown (testEq gasLawPressure) testPosition)
+    >>= (\_ -> print $ solveUnknown (testEq gasLawPressure) testPosition initialGrid )
     -- >>= (\_ -> putStrLn $! stringDomain Pressure ( timePos $ offsetPosition (head $ calculatedPositions runTimeSteps) Prev) (1+maxPos X) runTimeSteps  )
     -- >>= (\_ -> putStrLn $! stringDomain Pressure (timePos $ head $ calculatedPositions runTimeSteps) (1+maxPos X) runTimeSteps  )
     -- >>= (\_ -> putStrLn $! stringDomain U ( timePos $ offsetPosition (head $ calculatedPositions runTimeSteps) Prev) (1+maxPos X) runTimeSteps  )

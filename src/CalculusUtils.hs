@@ -12,9 +12,9 @@ direcDimenType direc = case direc of
     _ -> Spatial
 
 --volumeOrInterval:: (Num a, Fractional a ) => DimensionType -> Position ->a  
-volumeOrInterval dimetype position = case dimetype of
+volumeOrInterval dimetype position vs = case dimetype of
     Temporal -> timeStep
-    Spatial -> foldl' (\p d  -> p * sideLength d position ) 1 $! enumFrom X 
+    Spatial -> foldl' (\p d  -> p * sideLength d position vs) 1 $! enumFrom X 
 
 c2D:: Property -> Direction
 c2D c = case c of
@@ -31,11 +31,11 @@ d2C d = case d of
     _ -> undefined
 
 -- approximateDerivative::(Num a, Fractional a)=>  Term a -> Position-> Term a
-approximateDerivative deriv position= case deriv of 
+approximateDerivative deriv position vs= case deriv of 
     (Derivative direction func side m) ->
         let neighbor = offsetPosition position side
-            sl =  sideLength direction position
-            sln = sideLength direction neighbor
+            sl =  sideLength direction position vs
+            sln = sideLength direction neighbor vs
             interval = average [sl, sln ]
             thisVal = func position Center 
             neighborVal = func neighbor Center
@@ -51,7 +51,7 @@ approximateDerivative deriv position= case deriv of
     _ -> error "can't approx something that isn't a deriv"
 
 --solveUnknown::(Fractional a)=> Equation (Term a)->Position->a
-solveUnknown (Equation l r _) position= 
+solveUnknown (Equation l r _) position vs= 
     let sumUnknown p n =  p + case n of
             Unknown u-> u
             SubExpression s -> sumExpression sumUnknown $! getTerms s
@@ -59,7 +59,7 @@ solveUnknown (Equation l r _) position=
         sumConstants p n =  p + case n of
             Constant c-> c
             Derivative {}-> sumExpression sumConstants $!
-                [approximateDerivative n $! position]  
+                [approximateDerivative n position vs]  
             SubExpression s -> sumExpression sumConstants $! getTerms s
             _ -> 0
         sumExpression s = foldl' s 0
@@ -90,7 +90,7 @@ integSurface f position direction unknownProp= do
                         else (\x -> let [res] = multTerm (-1) x
                                 in res  ).f 
                     term = modf s
-                    sideAreaVal = sideArea s position
+                    sideAreaVal = sideArea s position vs
                     isUnknown = (direcDimenType direction,isUpper) == (Temporal,True) 
                 in case term of
                     Derivative d subf _ m-> head $ multTerm sideAreaVal $ Derivative d subf s m
@@ -112,7 +112,7 @@ integSingleTerm term dimetype cellposition unknownProp=  do
     return $
         let nonDerivAnswer = case term of 
                 SubExpression _ -> error "can't integrate a subexpression as a single term"
-                _ -> multTerm (volumeOrInterval dimetype cellposition) term
+                _ -> multTerm (volumeOrInterval dimetype cellposition vs) term
                 --Unknown c -> multTerm (runReader (volumeOrInterval dimetype cellposition) vs) term -- error( "Unknown " ++ show c)
                 --Constant c -> multTerm (runReader (volumeOrInterval dimetype cellposition) vs) term --   error ("Constant " ++ show c)
                 --(Derivative d f c m) -> 
