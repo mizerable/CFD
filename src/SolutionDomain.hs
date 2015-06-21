@@ -131,7 +131,8 @@ initialGridUnscaled =
         (ValSet calcPos v av sl)
          $! obstacles
          
-initialGrid =  (\grid -> upScaleGrid grid 3 X).(\grid -> upScaleGrid grid 3 Y) $ initialGridUnscaled
+initialGrid =  (\grid -> upScaleGrid grid 3 X)-- .(\grid -> upScaleGrid grid 3 Y) 
+    $ initialGridUnscaled
 
 upScaleGrid :: ValSet Double -> Int ->Direction -> ValSet Double
 upScaleGrid smallGrid scale direction = 
@@ -324,7 +325,9 @@ prop property position side env =
                 Density -> noValError
                 Temperature -> noValError
                 Pressure -> noValError 
-                _ -> fromJust $! Map.lookup (modifyPositionComponent p Time 0) (vals initialGrid )>>= Map.lookup property
+                _ -> case  Map.lookup (modifyPositionComponent p Time 0) (vals initialGrid )>>= Map.lookup property of
+                        Nothing -> noValError
+                        Just r -> r
             )
             --(fromJust $! Map.lookup (offsetPosition p Prev) set >>= Map.lookup property)   
             (Map.lookup p set >>= Map.lookup property)
@@ -419,10 +422,14 @@ fillEnclosedGaps allPos wallPos =
 sideArea s (Position p d _) vs = case s of 
     Now -> 1
     Prev -> 1
-    _ -> fromJust $! Map.lookup (Position p d 0) (areaVal $! vs)  >>= Map.lookup s    
+    _ -> case  Map.lookup (Position p d 0) (areaVal $! vs)  >>= Map.lookup s of
+            Nothing -> error $ "error getting side area for " ++ show p ++ " " ++ show s
+            Just sa -> sa
 
 -- sideLength:: (Num a, Fractional a) => Direction -> Position ->  a
 sideLength direction (Position p d _) vs = case direction of 
     Time -> timeStep
-    _ -> fromJust $! Map.lookup (Position p d 0) (sideLen $! vs) >>= Map.lookup direction   
+    _ -> case   Map.lookup (Position p d 0) (sideLen $! vs) >>= Map.lookup direction of
+            Nothing -> error $ "error getting side length for "++ show p++ " " ++ show direction
+            Just len -> len    
 
