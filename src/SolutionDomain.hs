@@ -52,14 +52,14 @@ maxPos :: Direction -> Int
 maxPos  d = case d of 
     X -> 300
     Y -> 100
-    Z -> 100
+    Z -> 0
     Time -> undefined
     
 gridSize :: Direction -> Double
 gridSize d = case d of 
     X -> 300
     Y -> 100
-    Z -> 100
+    Z -> 1
     Time -> undefined
 
 cellLength d = gridSize d / (fromIntegral $ maxPos d + 1)

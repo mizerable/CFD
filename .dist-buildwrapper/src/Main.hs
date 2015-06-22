@@ -200,7 +200,7 @@ calcSteps = [
     (continuity, True, allPositionsCurrentTime )
     ,(uMomentum, True, calculatedPositions )
     ,(vMomentum,  True, calculatedPositions )
-    ,(wMomentum,  True, calculatedPositions )
+    --,(wMomentum,  True, calculatedPositions )
     ,(energy,  True, allPositionsCurrentTime )  
     ] 
 
@@ -253,7 +253,7 @@ runTimeSteps_Print =
             mapM_
                 (\nextProp ->
                     GP.plotAsync ( PNG.cons $ "c:\\temp\\"++ show nextProp ++ "\\"++show step ++".png") 
-                    $! plotDomain $! valSetToGrid prev timeLevel nextProp (1+maxPos Y)
+                    $! plotDomain $! valSetToGrid prev timeLevel nextProp (1+maxPos Y) (quot (maxPos Z)  2)
                 ) $ enumFrom U
             putStrLn $ show $ length (calculatedPositions prev)
             putStrLn $ "step: " ++ show step 
@@ -292,18 +292,20 @@ makeRows whole curr [] _ _ = whole ++ [curr]
 makeRows whole curr items 0 width = makeRows (whole ++ [curr] ) [] items width width          
 makeRows whole curr (x:xs) r width= makeRows whole (curr++[x]) xs (r-1) width   
 
-valSetToGrid vs timeLevel property rowLength =
-    let positions = map 
-            (\(Position p d _) -> Position p d timeLevel)
-            makeAllPositions
+valSetToGrid vs timeLevel property rowLength zLevel=
+    let positions = 
+            filter (\next-> getPositionComponent next Z == zLevel) $ 
+            map 
+                (\(Position p d _) -> Position p d timeLevel)
+                makeAllPositions
     in makeRows [] [] 
             (map (\next -> prop property next Center vs )  positions )
             rowLength
             rowLength 
              
 --stringDomain:: (Num a, Fractional a, Show a ) => Property ->[Position]->Int-> ValSet a -> String
-stringDomain property timeLevel rowLength set =
-    let rows = valSetToGrid set timeLevel property rowLength  
+stringDomain property timeLevel rowLength set zLevel =
+    let rows = valSetToGrid set timeLevel property rowLength zLevel  
         strRows = map ( foldl' (\prev next-> prev ++ " " ++ show next) "" ) rows
     in foldl' (\prev next -> prev ++ "\n" ++ next ) "" strRows 
             
