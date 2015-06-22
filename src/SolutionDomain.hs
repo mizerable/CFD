@@ -40,7 +40,7 @@ instance Functor Term  where
          _ -> undefined    
 
 timeStep :: Double            
-timeStep = 0.011
+timeStep = 0.001
 
 specificHeatCv :: Double
 specificHeatCv = 15
@@ -50,16 +50,16 @@ storedSteps = 4
 
 maxPos :: Direction -> Int
 maxPos  d = case d of 
-    X -> 1350
-    Y -> 300
-    Z -> 0
+    X -> 300
+    Y -> 100
+    Z -> 100
     Time -> undefined
     
 gridSize :: Direction -> Double
 gridSize d = case d of 
-    X -> 450
+    X -> 300
     Y -> 100
-    Z -> 1
+    Z -> 100
     Time -> undefined
 
 cellLength d = gridSize d / (fromIntegral $ maxPos d + 1)
@@ -133,7 +133,7 @@ initialGridPre:: ValSet Double
 initialGridPre= 
     let vMap = foldl' (\prev next -> Map.insert next 
             (case next of 
-                U-> 2.11
+                U-> 5
                 V-> 0
                 W-> 0
                 Density -> 1
