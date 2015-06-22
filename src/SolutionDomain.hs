@@ -159,7 +159,12 @@ initialGrid =
         av = areaVal initialGridPre
         sl = sideLen initialGridPre
     in foldl'
-        (\prev next -> setVal prev next U 0.0)
+        (\prev nextPos ->
+            foldl'
+                (\prev2 nextProp -> setVal prev2 nextPos nextProp 0.0) 
+                prev
+                $ enumFrom U \\ enumFrom Density     
+        )
         (ValSet calcPos v av sl)
          $! obstacles
          
