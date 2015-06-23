@@ -57,12 +57,15 @@ approximateDerivative deriv position vs= case deriv of
                 sl =  sideLength direction position vs
                 sln1 = sideLength direction n1 vs
                 sln2 = sideLength direction n2 vs
-                interval = 2 * average [sl,sln1, sln2]
+                interval1 = average [sl,sln1]
+                interval2 = average [sl,sln2]
                 n1Val = func n1 side
                 n2Val = func n2 side
+                thisVal = func position side
                 mult = m position side
-            in case (n1Val, n2Val) of
-                (Constant c1 , Constant c2) -> Constant $ (c1-c2)*mult/interval 
+            in case (n1Val, n2Val, thisVal) of
+                (Constant c1 , Constant c2, Constant ct) -> 
+                    Constant $ average [ (c1-ct)*mult/interval1, (ct-c2)*mult/interval2 ]  
                 _ -> error "can't approx >1 order derivs. deriv must produce constants"
     _ -> error "can't approx something that isn't a deriv"
 

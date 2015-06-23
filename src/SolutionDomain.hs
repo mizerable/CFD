@@ -133,7 +133,7 @@ initialGridPre:: ValSet Double
 initialGridPre= 
     let vMap = foldl' (\prev next -> Map.insert next 
             (case next of 
-                U-> 5
+                U-> 2
                 V-> 0
                 W-> 0
                 Density -> 1
