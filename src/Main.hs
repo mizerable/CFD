@@ -105,8 +105,8 @@ vMomentum = do
             ) 
             ( concatMap (integrateTerms integrate env) 
                 [ divGrad [Mew,V] 1 
-                  -- ,divergence [ dmewu_dy, dmewv_dy, dmeww_dy ] 
-                  -- ,map (\d-> ddf_ d (-2/3) Y) (divergenceWithProps [Mew]) 
+                  ,divergence [ dmewu_dy, dmewv_dy, dmeww_dy ] 
+                  ,map (\d-> ddf_ d (-2/3) Y) (divergenceWithProps [Mew]) 
                 ]
             )
             V   
