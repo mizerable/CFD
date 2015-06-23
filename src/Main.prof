@@ -1,23 +1,23 @@
-	Wed Jun 17 14:02 2015 Time and Allocation Profiling Report  (Final)
+	Tue Jun 23 09:26 2015 Time and Allocation Profiling Report  (Final)
 
-	   Main.exe +RTS -p -RTS
+	   Main.exe +RTS -p -sstderr -RTS
 
-	total time  =       48.37 secs   (48374 ticks @ 1000 us, 1 processor)
-	total alloc = 31,010,162,808 bytes  (excludes profiling overheads)
+	total time  =      211.51 secs   (211508 ticks @ 1000 us, 1 processor)
+	total alloc = 82,712,634,608 bytes  (excludes profiling overheads)
 
 COST CENTRE MODULE  %time %alloc
 
-MAIN        MAIN     99.9   99.9
+MAIN        MAIN     99.7   99.8
 
 
                                                          individual     inherited
 COST CENTRE MODULE                     no.     entries  %time %alloc   %time %alloc
 
-MAIN        MAIN                        47           0   99.9   99.9   100.0  100.0
- CAF        GHC.IO.Encoding.CodePage    78           0    0.0    0.0     0.0    0.0
+MAIN        MAIN                        47           0   99.7   99.8   100.0  100.0
+ CAF        GHC.IO.Encoding.CodePage    79           0    0.0    0.0     0.0    0.0
  CAF        GHC.Float                   73           0    0.0    0.0     0.0    0.0
  CAF        GHC.IO.Encoding             70           0    0.0    0.0     0.0    0.0
  CAF        GHC.IO.Handle.FD            62           0    0.0    0.0     0.0    0.0
  CAF        CalculusUtils               56           0    0.0    0.0     0.0    0.0
- CAF        SolutionDomain              55           0    0.1    0.1     0.1    0.1
+ CAF        SolutionDomain              55           0    0.2    0.2     0.2    0.2
  CAF        Main                        54           0    0.0    0.0     0.0    0.0

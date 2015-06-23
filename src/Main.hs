@@ -3,26 +3,49 @@ module Main where
 
 import qualified Data.Map.Strict as Map 
 import Data.Maybe
-import Control.Monad.Reader as Reader
-import Control.Monad.Par as Par
+
 import SolutionDomain
 import CalculusUtils
 import GeometryStuff
 import Data.List
+import Control.Monad.Reader as Reader
 
+--{-
+import Control.Monad.Par as Par
 import qualified Graphics.Gnuplot.Graph as Graph
 import qualified Graphics.Gnuplot.Frame as Frame
 import qualified Graphics.Gnuplot.Frame.OptionSet as Opts
 import qualified Graphics.Gnuplot.Frame.Option as Opt
-import qualified Graphics.Gnuplot.Frame.OptionSet.Style as OptsStyle
 import qualified Graphics.Gnuplot.Advanced as GP
 import qualified Graphics.Gnuplot.Plot.TwoDimensional as Plot2D
 import qualified Graphics.Gnuplot.Graph.TwoDimensional as Graph2D
-import Graphics.Gnuplot.Plot.TwoDimensional (linearScale, )
 import Graphics.Gnuplot.Terminal.PNG as PNG 
 
 instance Par.NFData Property 
 instance Par.NFData Position
+
+ 
+defltOpts :: Graph.C graph => Opts.T graph
+defltOpts =
+   Opts.key False $
+   Opts.deflt
+    
+plotDomain :: [[Double]]-> Frame.T ( Graph2D.T Int Int)
+plotDomain grid = 
+    let xsize = length (head grid)-1 
+        ysize = length  grid  -1
+        printSize = (show $ ysize * 5)++","++(show $ xsize * 5)
+    in Frame.cons 
+            ( Opts.add ( 
+                Opt.custom "terminal pngcairo size" printSize) [printSize] $ 
+                Opts.sizeRatio ((fromIntegral xsize)/(fromIntegral ysize)) $ defltOpts )
+            --(Opts.sizeRatio ((fromIntegral xsize)/(fromIntegral ysize)) $ defltOpts)
+        $ Plot2D.function Graph2D.image 
+        (liftM2 (,)  [0..ysize] [0..xsize]) 
+            $ \(x,y) -> (grid!!x)!!y
+             
+
+---}
 
 defaultInflow:: Double
 defaultInflow = 1
@@ -200,7 +223,7 @@ calcSteps = [
     (continuity, True, allPositionsCurrentTime )
     ,(uMomentum, True, calculatedPositions )
     ,(vMomentum,  True, calculatedPositions )
-    --,(wMomentum,  True, calculatedPositions )
+    ,(wMomentum,  True, calculatedPositions )
     ,(energy,  True, allPositionsCurrentTime )  
     ] 
 
@@ -226,43 +249,26 @@ runSingleStep prev _ =
                 
 runTimeSteps :: ValSet Double
 runTimeSteps = (\x -> foldl'  runSingleStep x [0..25] ) $! initialGrid  
- 
-defltOpts :: Graph.C graph => Opts.T graph
-defltOpts =
-   Opts.key False $
-   Opts.deflt
-    
-plotDomain :: [[Double]]-> Frame.T ( Graph2D.T Int Int)
-plotDomain grid = 
-    let xsize = length (head grid)-1 
-        ysize = length  grid  -1
-        printSize = (show $ ysize * 5)++","++(show $ xsize * 5)
-    in Frame.cons 
-            ( Opts.add ( 
-                Opt.custom "terminal pngcairo size" printSize) [printSize] $ 
-                Opts.sizeRatio ((fromIntegral xsize)/(fromIntegral ysize)) $ defltOpts )
-            --(Opts.sizeRatio ((fromIntegral xsize)/(fromIntegral ysize)) $ defltOpts)
-        $ Plot2D.function Graph2D.image 
-        (liftM2 (,)  [0..ysize] [0..xsize]) 
-            $ \(x,y) -> (grid!!x)!!y
-             
+
 runTimeSteps_Print =
     foldM_
         (\prev step -> do
             let timeLevel = timePos $ head $ calculatedPositions prev
+            --{-
             mapM_
                 (\nextProp ->
                     GP.plotAsync ( PNG.cons $ "c:\\temp\\"++ show nextProp ++ "\\"++show step ++".png") 
                     $! plotDomain $! valSetToGrid prev timeLevel nextProp (1+maxPos Y) (quot (maxPos Z)  2)
                 ) $ enumFrom U
+            ---}
             putStrLn $ show $ length (calculatedPositions prev)
             putStrLn $ "step: " ++ show step 
             putStrLn $ "timeLevel: " ++ show timeLevel
-            --putStrLn $ stringDomain U timeLevel (1 + maxPos Y) prev
+            --putStrLn $ stringDomain U timeLevel (1 + maxPos Y) prev (quot (maxPos Z)  2)
             return $! runSingleStep prev ()
         )
         initialGrid
-        [0..99999]
+        [0..999999]
  
 testTerms = [Unknown 2.4, Constant 1.2, Constant 3.112, Unknown (-0.21),  SubExpression (Expression [Constant 2, Constant 2, SubExpression (Expression [Unknown 0.33333])])]
 
