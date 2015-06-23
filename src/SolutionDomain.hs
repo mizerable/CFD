@@ -39,6 +39,20 @@ instance Functor Term  where
          Unknown u -> Unknown $ f u
          _ -> undefined    
 
+isConvected :: Property -> Bool
+isConvected p = case p of
+    Density -> False
+    Mew -> False
+    Pressure -> False
+    _ -> True
+
+convectionFromDirection :: Direction -> Property 
+convectionFromDirection d = case d of
+    X -> U
+    Y -> V
+    Z -> W
+    _ -> error "no convection for that direction"    
+
 timeStep :: Double            
 timeStep = 0.001
 
@@ -346,8 +360,33 @@ envIfWall (Position p d _) env = if Set.member (Position p d 0) wallPositionsSet
     then id $! initialGrid
     else env       
 
+pecletNumber position side env = 
+    let direc = directionFromCenter side
+        momentum = propCentralDiff (convectionFromDirection direc) position side env  
+        density = propCentralDiff Density position side env
+        viscosity = propCentralDiff Mew position side env
+        l = sideLength direc position env 
+    in (density * momentum * l) / viscosity 
+
+prop property position side env =
+    let decide = 
+            let peclet = pecletNumber position side env  
+            in if abs peclet > 2.0 
+                then propUpwindDiff peclet  
+                else propCentralDiff 
+    in if elem side ( enumFrom East \\ enumFrom Center )
+        then decide property position side env 
+        else  propCentralDiff property position side env 
+              
+propUpwindDiff pec property position side env = 
+    let upper = if isUpperSide side then side else Center 
+        lower = if isUpperSide side then Center else side
+    in if pec > 0
+        then propCentralDiff property (offsetPosition position lower) Center env
+        else propCentralDiff property (offsetPosition position upper) Center env
+
 --prop::(Num a, Fractional a)=> Property->Position->Side-> Reader (ValSet a) a
-prop property position side env = 
+propCentralDiff property position side env = 
     let neighbor = offsetPosition position side
         noValError = error ("no value "
                             ++ 
