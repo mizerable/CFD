@@ -46,6 +46,9 @@ isConvected p = case p of
     Pressure -> False
     _ -> True
 
+isMomentum :: Property -> Bool
+isMomentum p = elem p $ enumFrom U \\ enumFrom Density
+
 convectionFromDirection :: Direction -> Property 
 convectionFromDirection d = case d of
     X -> U
@@ -54,7 +57,7 @@ convectionFromDirection d = case d of
     _ -> error "no convection for that direction"    
 
 timeStep :: Double            
-timeStep = 0.001
+timeStep = 0.01
 
 specificHeatCv :: Double
 specificHeatCv = 15
@@ -352,11 +355,13 @@ average terms =
         f p n= p + n / len
     in foldl' f 0 terms
 
-positionIfWall (Position p d t) = if Set.member (Position p d 0) wallPositionsSet
+isWallPosition (Position p d t) = Set.member (Position p d 0) wallPositionsSet
+
+positionIfWall (Position p d t) = if isWallPosition (Position p d t) 
     then Position p d 0
     else Position p d t
     
-envIfWall (Position p d _) env = if Set.member (Position p d 0) wallPositionsSet
+envIfWall (Position p d _) env = if isWallPosition (Position p d 0) 
     then id $! initialGrid
     else env       
 
@@ -369,15 +374,16 @@ pecletNumber position side env =
     in (density * momentum * l) / viscosity 
 
 prop property position side env =
-    let decide = 
+    let decide =
             let peclet = pecletNumber position side env  
-            in if abs peclet > 2.0 
+            in if abs peclet > 1.9999 
                 then propUpwindDiff peclet  
                 else propCentralDiff 
-    in if elem side ( enumFrom East \\ enumFrom Center )
-        then decide property position side env 
-        else  propCentralDiff property position side env 
-              
+    in case (isConvected property, elem side ( enumFrom East \\ enumFrom Center )) of
+        (True,True) -> decide property position side env 
+        _ -> propCentralDiff property position side env 
+
+propUpwindDiff :: Double -> Property -> Position -> Side -> ValSet Double -> Double              
 propUpwindDiff pec property position side env = 
     let upper = if isUpperSide side then side else Center 
         lower = if isUpperSide side then Center else side
@@ -399,9 +405,6 @@ propCentralDiff property position side env =
                             ++ show side)
         getVal:: Position -> Map.Map Position (Map.Map Property Double) -> Double
         getVal p set = fromMaybe 
-            --(case timePos position of
-             --   0 -> noValError
-              --  _ -> prop property (offsetPosition p Prev) side  env)
             --noValError
             (case property of
                 Density -> noValError
@@ -410,12 +413,12 @@ propCentralDiff property position side env =
                 _ -> case  Map.lookup (modifyPositionComponent p Time 0) (vals initialGrid )>>= Map.lookup property of
                         Nothing -> noValError
                         Just r -> r
-            )
-            --(fromJust $! Map.lookup (offsetPosition p Prev) set >>= Map.lookup property)   
+            )   
             (Map.lookup p set >>= Map.lookup property)
-        --res p = getVal (positionIfWall p) (vals $! envIfWall p env )
         res p = getVal p (vals env )
-    in average [ res position, res neighbor]
+    in case (isWallPosition neighbor, isMomentum property) of
+        (True,True) -> 0
+        _ -> average [ res position, res neighbor]
 
 -- GEOMETRY STUFF 
  
