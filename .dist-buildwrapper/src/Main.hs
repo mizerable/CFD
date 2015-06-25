@@ -89,7 +89,7 @@ testEquation =
         U
 
 --continuity::(Num a, Fractional a, RealFloat a)=> Reader (ValSet a) (Equation (Position-> [Term a]))
-continuity::Reader (ValSet Double) (Equation (Position-> [Term Double]))
+--continuity::Reader (ValSet Double) (Equation (Position-> [Term Double]))
 continuity = do
     env <- ask
     return $ let integrate = integUnknown env Density 
@@ -100,7 +100,7 @@ continuity = do
             Density
     
 --uMomentum::(Num a, Fractional a, RealFloat a)=> Reader (ValSet a) (Equation (Position-> [Term a]))
-uMomentum::Reader (ValSet Double) (Equation (Position-> [Term Double]))
+--uMomentum::Reader (ValSet Double) (Equation (Position-> [Term Double]))
 uMomentum = do
     env <- ask
     return $ let integrate = integUnknown env U
@@ -117,7 +117,7 @@ uMomentum = do
             )
             U
 
-vMomentum::Reader (ValSet Double) (Equation (Position-> [Term Double]))
+--vMomentum::Reader (ValSet Double) (Equation (Position-> [Term Double]))
 vMomentum = do
     env <- ask
     return $ let integrate = integUnknown env V
@@ -134,7 +134,7 @@ vMomentum = do
             )
             V   
 
-wMomentum::Reader (ValSet Double) (Equation (Position-> [Term Double]))
+--wMomentum::Reader (ValSet Double) (Equation (Position-> [Term Double]))
 wMomentum =  do
     env <- ask
     return $ let integrate = integUnknown env W 
@@ -151,7 +151,7 @@ wMomentum =  do
             )
             W      
 
-energy::Reader (ValSet Double) (Equation (Position-> [Term Double]))
+--energy::Reader (ValSet Double) (Equation (Position-> [Term Double]))
 energy =  do
     env <- ask
     return $ let integrate = integUnknown env Temperature
@@ -178,17 +178,17 @@ energy =  do
             )
             Temperature   
 
-gasLawPressure::Reader (ValSet Double) (Equation (Position-> [Term Double]))
+--gasLawPressure::Reader (ValSet Double) (Equation (Position-> [Term Double]))
 gasLawPressure = do
     env <- ask
     return $  
         Equation
             [ const [Unknown 1]]
-            [ \pos -> [ Constant $ gasConstantR * prop Density pos Center  env 
-                * prop Temperature pos Center env ] ]
+            [ \pos -> [ Constant $ gasConstantR * prop Nondirectional Density pos Center  env 
+                * prop Directional Temperature pos Center env ] ]
             Pressure          
     
-getDiscEqInstance:: Equation (Position -> [Term a]) -> Position -> Equation (Term a)
+--getDiscEqInstance:: Equation (SchemeType -> Position -> [Term a]) -> SchemeType -> Position -> Equation (SchemeType ->Term a)
 getDiscEqInstance (Equation l r up) pos = Equation (concatMap (\t -> t pos) $! l) (concatMap (\t -> t pos) $! r) up
     
 advanceTime :: Position -> Position
@@ -305,7 +305,7 @@ valSetToGrid vs timeLevel property rowLength zLevel=
                 (\(Position p d _) -> Position p d timeLevel)
                 makeAllPositions
     in makeRows [] [] 
-            (map (\next -> prop property next Center vs )  positions )
+            (map (\next -> prop Nondirectional property next Center vs )  positions )
             rowLength
             rowLength 
              
@@ -320,7 +320,7 @@ main =
     putStrLn "starting ..... "
     >>= (\_-> print ( solveUnknown testEquation ( Position [0, 0, 0] 3 0) initialGrid )) 
     >>= (\_ -> putStrLn $ writeTerms (distributeMultiply testTerms 2) initialGrid)
-    >>= (\_ -> print $ prop U testPosition Center  initialGrid)
+    >>= (\_ -> print $ prop Nondirectional U testPosition Center  initialGrid)
     >>= (\_ -> putStrLn " continuity ------------ ")
     >>= (\_ -> putStrLn $ writeTerms ( rhs $ testEq continuity ) initialGrid )
     >>= (\_ -> putStrLn " = ")

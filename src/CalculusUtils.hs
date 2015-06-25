@@ -30,7 +30,7 @@ d2C d = case d of
     Z -> W
     _ -> error "other directions don't have an associated property"
 
--- approximateDerivative::(Num a, Fractional a)=>  Term a -> Position-> Term a
+--approximateDerivative::(Num a, Fractional a)=>  Term a -> Position-> ValSet a -> Term a
 approximateDerivative deriv position vs= case deriv of 
     (Derivative direction func side m) ->
         if directionFromCenter side == direction 
@@ -39,14 +39,14 @@ approximateDerivative deriv position vs= case deriv of
                 sl =  sideLength direction position vs
                 sln = sideLength direction neighbor vs
                 interval = average [sl, sln ]
-                thisVal = func position Center 
-                neighborVal = func neighbor Center
+                thisVal = func Nondirectional position Center 
+                neighborVal = func Nondirectional neighbor Center
                 neighborIsUpper = isUpperSide side  
                 f first = case (first, neighborIsUpper) of
                     (True, True) -> neighborVal
                     (False, False) -> neighborVal
                     _-> thisVal
-                mult = m position Center
+                mult = m Nondirectional position Center
             in case (f True, f False) of
                 (Constant c1 , Constant c2) -> Constant $ (c1-c2)*mult/interval 
                 _ -> error "can't approx >1 order derivs. deriv must produce constants" 
@@ -58,16 +58,16 @@ approximateDerivative deriv position vs= case deriv of
                 sln1 = sideLength direction n1 vs
                 sln2 = sideLength direction n2 vs
                 interval = 2 * average [sl,sln1,sln2]
-                n1Val = func n1 side
-                n2Val = func n2 side
-                mult = m position side
+                n1Val = func Nondirectional n1 side
+                n2Val = func Nondirectional n2 side
+                mult = m Nondirectional position side
             in case (n1Val, n2Val) of
                 (Constant c1 , Constant c2) -> 
                     Constant $ (c1-c2)*mult/interval  
                 _ -> error "can't approx >1 order derivs. deriv must produce constants"
     _ -> error "can't approx something that isn't a deriv"
 
---solveUnknown::(Fractional a)=> Equation (Term a)->Position->a
+--solveUnknown::(Fractional a)=> Equation (SchemeType ->Term a)->Position->a
 solveUnknown (Equation l r _) position vs= 
     let sumUnknown p n =  p + case n of
             Unknown u-> u
@@ -89,11 +89,11 @@ solveUnknown (Equation l r _) position vs=
 distributeMultiply::(Num a)=> [Term a]->a->[Term a]
 distributeMultiply terms m = concatMap (multTerm m) terms
         
-multTerm:: (Num a)=> a -> Term a -> [Term a]
+--multTerm:: (Num a)=> a -> Term a -> [Term a]
 multTerm m term  = case term of
     SubExpression s -> distributeMultiply ( getTerms s  ) m
     Derivative direc func side multF->  
-        let modf x s = fmap (*m) (func x s)   
+        let modf st x s = fmap (*m) (func st x s)   
         in [Derivative direc modf side multF]
     _-> [fmap (*m) term]
                 
@@ -116,7 +116,7 @@ integSurface f position direction unknownProp= do
                         then 
                             let constantVal = fmap
                                     (* (sideAreaVal 
-                                        / prop unknownProp position s vs)) 
+                                        / prop Directional unknownProp position s vs)) 
                                     term
                             in Unknown $ if isNaN (val constantVal) 
                                 then 1 else val constantVal      
@@ -140,7 +140,7 @@ integSingleTerm term dimetype cellposition unknownProp=  do
             Derivative direction func _ _->
                 if direcDimenType direction == dimetype  
                 then runReader 
-                        (integSurface ( func cellposition ) cellposition direction unknownProp)
+                        (integSurface ( func Directional cellposition ) cellposition direction unknownProp)
                         vs
                 else nonDerivAnswer
             _ -> nonDerivAnswer    
@@ -154,33 +154,33 @@ integ vs dimetype terms cellposition = do
             (integSingleTerm x dimetype cellposition unknownProp) vs 
             ++ runReader (integ vs dimetype xs cellposition) unknownProp   
 
---d_:: (Fractional a) => [Property]-> Direction -> Reader (ValSet a) (Term a)
+--d_::[Property]-> Direction -> Reader (ValSet Double) (Term Double)
 d_ properties = df_ properties 1 
 
 -- df_ :: (Num a,Fractional a) => [Property]-> a ->Direction -> Reader (ValSet a) (Term a)
 df_ :: [Property]-> Double ->Direction -> Reader (ValSet Double) (Term Double)      
-df_ properties factor = dfm_ properties factor (\_ _ -> 1)         
+df_ properties factor = dfm_ properties factor (\_ _ _ -> 1)         
 
 dfm_ properties factor multF direction = do
     d<-ask 
     return $ Derivative direction 
-        (\x s -> Constant $ runReader ( multProps properties x s ) d   * factor )
+        (\st x s -> Constant $ runReader (  multProps properties st x s ) d   * factor )
         Center
         multF       
       
-dd_ :: (Num a,Fractional a)=> Reader (ValSet a) (Term a) -> Direction -> Reader (ValSet a) (Term a)
+--dd_ :: (Num a,Fractional a)=> Reader (ValSet a) (Term a) -> Direction -> Reader (ValSet a) (Term a)
 dd_ inner  = ddf_ inner 1 
 
-ddf_ ::(Num a,Fractional a)=> Reader (ValSet a) (Term a) -> a-> Direction -> Reader (ValSet a) (Term a)
-ddf_ inner factor = ddfm_ inner factor (\_ _ -> return 1)
+--ddf_ ::(Num a,Fractional a)=> Reader (ValSet a) (Term a) -> a-> Direction -> Reader (ValSet a) (Term a)
+ddf_ inner factor = ddfm_ inner factor (\_ _ _ -> return 1)
 
 ddfm_ inner factor multF direction = do
     d<- ask
     return $ Derivative 
         direction 
-        (\_ _ -> head $! multTerm factor $! runReader inner d  ) 
+        (\_ _ _-> head $! multTerm factor $! runReader inner d  ) 
         Center 
-        (\pos side -> runReader (multF pos side) d)
+        (\st pos side -> runReader (multF st pos side) d)
        
 --drho_dt:: (Fractional a) => Reader (ValSet a) (Term a)        
 drho_dt = d_ [Density] Time
@@ -250,14 +250,16 @@ divGrad properties constantFactor = divergence $ gradient properties constantFac
 
 integrateOrder integrate i1 i2 term = integrate i1 term >>= integrate i2
         
--- multProps ::(Num a, Fractional a)=> [Property] ->Position ->Side -> Reader (ValSet a) a
-multProps = 
-    foldl' 
+--multProps ::(Num a, Fractional a)=> [Property] ->SchemeType ->Position ->Side -> Reader (ValSet a) a
+multProps props schemeType= 
+    let func = prop schemeType
+    in foldl' 
         (\prev next pos side->
             do
                 vs <- ask
-                return $ runReader (prev pos side) vs *  prop next pos side vs)         
-        (\_ _ -> return 1) 
+                return $ runReader (prev pos side) vs *  func next pos side vs)          
+        (\_ _ -> return 1)
+        props  
                 
 -- squareDerivative:: (Num a, Fractional a) => [Property] -> a->Direction -> [Reader (ValSet a) (Term a)]        
 squareDerivative properties constantFactor direction = 

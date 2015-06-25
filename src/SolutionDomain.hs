@@ -8,6 +8,8 @@ import Data.List
 
 data Side =  Now | Prev |East | West | North | South | Top | Bottom | Center deriving (Show,Eq,Ord, Enum)
   
+data SchemeType = Directional | Nondirectional       
+  
 data Direction = Time | X | Y | Z deriving (Enum,Ord,Eq,Show)
 data DimensionType = Temporal | Spatial deriving ( Eq)
 data Equation a = Equation{
@@ -30,8 +32,8 @@ data Term a =
     Constant {val:: !a}
     | Unknown { coeff:: !a }
     | SubExpression {expression:: !(Expression a) }  
-    | Derivative { denom:: !Direction ,function:: !(Position->Side->Term a), centered:: !Side, 
-        multiplier:: !(Position->Side-> a) } 
+    | Derivative { denom:: !Direction ,function:: !(SchemeType -> Position->Side->Term a), centered:: !Side, 
+        multiplier:: !(SchemeType->Position->Side-> a) } 
         
 instance Functor Term  where
     fmap f x = case x of
@@ -281,17 +283,6 @@ makePositions maxes =
     let ranges = map (\x -> map (:[]) [0..x] ) maxes 
         posCoords = foldl' cartProd [[]] ranges
     in map (\coords -> Position coords (length coords) 0) posCoords
-              
---mergeValSets :: (Num a, Fractional a) => ValSet a -> ValSet a-> ValSet a
-mergeValSets modifying base = foldl'
-    (\prev next-> 
-        foldl'
-            (\p1 n1-> setVal p1 n1 next $! prop next n1 Center modifying) 
-            prev
-            $! calculatedPositions modifying 
-    )
-    base
-    $! enumFrom U
 
 setElem newElem index list = 
     map (\x -> if x == index then newElem else list!!x) [0..length list -1]
@@ -378,16 +369,21 @@ pecletNumber position side env =
         l = sideLength direc position env 
     in (density * momentum * l) / viscosity 
 
-prop property position side env =
+prop schemeType = case schemeType of
+    Directional -> propDirectional
+    Nondirectional -> propCentralDiff
+
+propDirectional property position side env =
     let neighbor = offsetPosition position side
         decide =
             let peclet = pecletNumber position side env  
             in if abs peclet > 2.6
-                then propUpwindDiff peclet  
+                then propQUICK peclet  
                 else propQUICK peclet 
     in case (isObstaclePosition neighbor
                 , isMomentum property 
-                ,elem side ( enumFrom East \\ enumFrom Center )) of
+                ,elem side ( enumFrom East \\ enumFrom Center ) 
+                    && isConvected property) of
         (True,True,_)-> 0.0
         (_,_,True) -> decide property position side env 
         _ -> propCentralDiff property position side env 
