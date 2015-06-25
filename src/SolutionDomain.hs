@@ -112,11 +112,14 @@ removeItems orig remove=
     let removeSet = Set.fromList remove
     in filter ( `Set.notMember` removeSet) orig      
 
-wallPositions :: [Position]
-wallPositions = (obstacles ++ inflowPositions)
+boundaryPositions :: [Position]
+boundaryPositions = obstacles ++ inflowPositions
 
-wallPositionsSet :: Set.Set Position
-wallPositionsSet = Set.fromList $! wallPositions 
+boundaryPositionsSet :: Set.Set Position
+boundaryPositionsSet = Set.fromList $! boundaryPositions 
+
+obstaclesSet :: Set.Set Position
+obstaclesSet = Set.fromList $! obstacles  
 
 obstacle :: Position
 obstacle = coordToPos [gridSize X / 4 , gridSize Y / 2 , 0 ] 0
@@ -171,7 +174,7 @@ initialGridPre=
     in ValSet makeAllPositions v av sl 
     
 initialGrid = 
-    let calcPos = removeItems (calculatedPositions initialGridPre) $! wallPositions
+    let calcPos = removeItems (calculatedPositions initialGridPre) $! boundaryPositions
         v= vals initialGridPre
         av = areaVal initialGridPre
         sl = sideLen initialGridPre
@@ -355,13 +358,15 @@ average terms =
         f p n= p + n / len
     in foldl' f 0 terms
 
-isWallPosition (Position p d t) = Set.member (Position p d 0) wallPositionsSet
+isBoundaryPosition (Position p d t) = Set.member (Position p d 0) boundaryPositionsSet
 
-positionIfWall (Position p d t) = if isWallPosition (Position p d t) 
+isObstaclePosition (Position p d t) = Set.member (Position p d 0) obstaclesSet 
+
+positionIfWall (Position p d t) = if isBoundaryPosition (Position p d t) 
     then Position p d 0
     else Position p d t
     
-envIfWall (Position p d _) env = if isWallPosition (Position p d 0) 
+envIfWall (Position p d _) env = if isBoundaryPosition (Position p d 0) 
     then id $! initialGrid
     else env       
 
@@ -416,7 +421,7 @@ propCentralDiff property position side env =
             )   
             (Map.lookup p set >>= Map.lookup property)
         res p = getVal p (vals env )
-    in case (isWallPosition neighbor, isMomentum property) of
+    in case (isObstaclePosition neighbor, isMomentum property) of
         (True,True) -> 0
         _ -> average [ res position, res neighbor]
 
