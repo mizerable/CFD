@@ -379,15 +379,19 @@ pecletNumber position side env =
     in (density * momentum * l) / viscosity 
 
 prop property position side env =
-    let decide =
+    let neighbor = offsetPosition position side
+        decide =
             let peclet = pecletNumber position side env  
             in if abs peclet > 2.6
                 then propUpwindDiff peclet  
                 else propQUICK peclet 
-    in case elem side ( enumFrom East \\ enumFrom Center ) of
-        True -> decide property position side env 
+    in case (isObstaclePosition neighbor
+                , isMomentum property 
+                ,elem side ( enumFrom East \\ enumFrom Center )) of
+        (True,True,_)-> 0.0
+        (_,_,True) -> decide property position side env 
         _ -> propCentralDiff property position side env 
-
+        
 oppositeSide :: Side -> Side 
 oppositeSide s = 
     let d = directionFromCenter s
