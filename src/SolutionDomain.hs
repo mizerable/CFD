@@ -384,8 +384,8 @@ prop property position side env =
             in if abs peclet > 2.6
                 then propUpwindDiff peclet  
                 else propQUICK peclet 
-    in case (isConvected property, elem side ( enumFrom East \\ enumFrom Center )) of
-        (True,True) -> decide property position side env 
+    in case elem side ( enumFrom East \\ enumFrom Center ) of
+        True -> decide property position side env 
         _ -> propCentralDiff property position side env 
 
 oppositeSide :: Side -> Side 
