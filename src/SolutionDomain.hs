@@ -381,18 +381,38 @@ pecletNumber position side env =
 prop property position side env =
     let decide =
             let peclet = pecletNumber position side env  
-            in if abs peclet > 1.9999 
+            in if abs peclet > 2.6
                 then propUpwindDiff peclet  
-                else propCentralDiff 
+                else propQUICK peclet 
     in case (isConvected property, elem side ( enumFrom East \\ enumFrom Center )) of
         (True,True) -> decide property position side env 
         _ -> propCentralDiff property position side env 
+
+oppositeSide :: Side -> Side 
+oppositeSide s = 
+    let d = directionFromCenter s
+        (s1,s2) = boundaryPair d
+    in if isUpperSide s 
+        then s2 else s1 
+
+propQUICK :: Double -> Property -> Position -> Side ->ValSet Double -> Double
+propQUICK pec property position side env = 
+    let upper = if isUpperSide side then side else Center 
+        lower = if isUpperSide side then Center else side
+        doubleOffset pos = offsetPosition pos >>= offsetPosition
+    in if pec >= 0
+        then ((6/8)* propCentralDiff property (offsetPosition position lower) Center env ) 
+            + ((3/8)* propCentralDiff property (offsetPosition position upper) Center env ) 
+            - ((1/8)* propCentralDiff property (doubleOffset position lower) Center env ) 
+        else ((6/8)* propCentralDiff property (offsetPosition position upper) Center env ) 
+            + ((3/8)* propCentralDiff property (offsetPosition position lower) Center env ) 
+            - ((1/8)* propCentralDiff property (offsetPosition position $ oppositeSide lower) Center env )
 
 propUpwindDiff :: Double -> Property -> Position -> Side -> ValSet Double -> Double              
 propUpwindDiff pec property position side env = 
     let upper = if isUpperSide side then side else Center 
         lower = if isUpperSide side then Center else side
-    in if pec > 0
+    in if pec >= 0
         then propCentralDiff property (offsetPosition position lower) Center env
         else propCentralDiff property (offsetPosition position upper) Center env
 
