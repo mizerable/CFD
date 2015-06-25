@@ -378,7 +378,7 @@ propDirectional property position side env =
         decide =
             let peclet = pecletNumber position side env  
             in if abs peclet > 2.6
-                then propQUICK peclet  
+                then propUpwindDiff peclet  
                 else propQUICK peclet 
     in case (isObstaclePosition neighbor
                 , isMomentum property 
