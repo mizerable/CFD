@@ -37,7 +37,7 @@ instance Functor Term  where
     fmap f x = case x of
          Constant c -> Constant $ f c
          Unknown u -> Unknown $ f u
-         _ -> undefined    
+         _ -> error "can't fmap other than unknown and constant"
 
 isConvected :: Property -> Bool
 isConvected p = case p of
@@ -70,14 +70,14 @@ maxPos  d = case d of
     X -> 300
     Y -> 100
     Z -> 0
-    Time -> undefined
+    Time -> error "no max time position"
     
 gridSize :: Direction -> Double
 gridSize d = case d of 
     X -> 300
     Y -> 100
     Z -> 1
-    Time -> undefined
+    Time -> error "gridsize for time is the timestep"
 
 cellLength d = gridSize d / (fromIntegral $ maxPos d + 1)
 
@@ -103,8 +103,8 @@ faceToDirections s = case s of
     South -> [X,Z]
     Top -> [X,Y]
     Bottom -> [X,Y]
-    Now -> undefined
-    Prev -> undefined
+    Now -> error "no directions outline the now face"
+    Prev -> error "no directions outline the prev face"
     Center -> enumFrom X
 
 removeItems  :: (Ord a, Eq a)=> [a] -> [a]-> [a]
@@ -323,7 +323,7 @@ directionFromCenter side = case side of
     Bottom -> Z
     Now -> Time
     Prev -> Time
-    Center -> undefined 
+    Center -> error "there is no direction from center" 
     
 offsetPosition:: Position->Side ->Position
 offsetPosition (Position p d t) side = case side of
@@ -400,13 +400,16 @@ propQUICK pec property position side env =
     let upper = if isUpperSide side then side else Center 
         lower = if isUpperSide side then Center else side
         doubleOffset pos = offsetPosition pos >>= offsetPosition
+        farPoint upBracket downBracket = if upBracket == Center
+            then offsetPosition position $ oppositeSide downBracket
+            else doubleOffset position upBracket 
     in if pec >= 0
         then ((6/8)* propCentralDiff property (offsetPosition position lower) Center env ) 
             + ((3/8)* propCentralDiff property (offsetPosition position upper) Center env ) 
-            - ((1/8)* propCentralDiff property (doubleOffset position lower) Center env ) 
+            - ((1/8)* propCentralDiff property (farPoint lower upper) Center env ) 
         else ((6/8)* propCentralDiff property (offsetPosition position upper) Center env ) 
             + ((3/8)* propCentralDiff property (offsetPosition position lower) Center env ) 
-            - ((1/8)* propCentralDiff property (offsetPosition position $ oppositeSide lower) Center env )
+            - ((1/8)* propCentralDiff property (farPoint upper lower) Center env )
 
 propUpwindDiff :: Double -> Property -> Position -> Side -> ValSet Double -> Double              
 propUpwindDiff pec property position side env = 

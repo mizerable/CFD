@@ -21,14 +21,14 @@ c2D c = case c of
     U -> X
     V -> Y
     W -> Z
-    _ -> undefined
+    _ -> error "other properties don't have an associated direction"
     
 d2C:: Direction -> Property
 d2C d = case d of 
     X -> U
     Y -> V
     Z -> W
-    _ -> undefined
+    _ -> error "other directions don't have an associated property"
 
 -- approximateDerivative::(Num a, Fractional a)=>  Term a -> Position-> Term a
 approximateDerivative deriv position vs= case deriv of 
