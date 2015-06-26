@@ -129,13 +129,7 @@ integSingleTerm term dimetype cellposition unknownProp=  do
     return $
         let nonDerivAnswer = case term of 
                 SubExpression _ -> error "can't integrate a subexpression as a single term"
-                _ -> multTerm (volumeOrInterval dimetype cellposition vs) term
-                --Unknown c -> multTerm (runReader (volumeOrInterval dimetype cellposition) vs) term -- error( "Unknown " ++ show c)
-                --Constant c -> multTerm (runReader (volumeOrInterval dimetype cellposition) vs) term --   error ("Constant " ++ show c)
-                --(Derivative d f c m) -> 
-                    --multTerm (runReader (volumeOrInterval dimetype cellposition) vs) (Derivative X (\_ _ -> Constant 1) Center (\_ _ -> 1))
-                    --multTerm (runReader (volumeOrInterval dimetype cellposition) vs) term
-                    --error ("Derivative " ++ (show d) ++ " " ++ (show c ) )   
+                _ -> multTerm (volumeOrInterval dimetype cellposition vs) term   
         in case term of     
             Derivative direction func _ _->
                 if direcDimenType direction == dimetype  

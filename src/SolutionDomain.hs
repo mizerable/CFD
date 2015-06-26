@@ -382,8 +382,7 @@ propDirectional property position side env =
                 else propQUICK peclet 
     in case (isObstaclePosition neighbor
                 , isMomentum property 
-                ,elem side ( enumFrom East \\ enumFrom Center ) 
-                    && isConvected property) of
+                ,elem side ( enumFrom East \\ enumFrom Center ) ) of
         (True,True,_)-> 0.0
         (_,_,True) -> decide property position side env 
         _ -> propCentralDiff property position side env 
@@ -444,8 +443,9 @@ propCentralDiff property position side env =
             )   
             (Map.lookup p set >>= Map.lookup property)
         res p = getVal p (vals env )
-    in case (isObstaclePosition neighbor, isMomentum property) of
-        (True,True) -> 0
+    in case (isObstaclePosition neighbor, isMomentum property, position == neighbor) of
+        (True,True,_) -> 0.0
+        (_,_,True) -> res position
         _ -> average [ res position, res neighbor]
 
 -- GEOMETRY STUFF 

@@ -184,7 +184,7 @@ gasLawPressure = do
     return $  
         Equation
             [ const [Unknown 1]]
-            [ \pos -> [ Constant $ gasConstantR * prop Nondirectional Density pos Center  env 
+            [ \pos -> [ Constant $ gasConstantR * prop Directional Density pos Center  env 
                 * prop Directional Temperature pos Center env ] ]
             Pressure          
     
