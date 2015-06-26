@@ -58,9 +58,9 @@ approximateDerivative deriv position vs= case deriv of
                 sln1 = sideLength direction n1 vs
                 sln2 = sideLength direction n2 vs
                 interval = 2 * average [sl,sln1,sln2]
-                n1Val = func Nondirectional n1 side
-                n2Val = func Nondirectional n2 side
-                mult = m Nondirectional position side
+                n1Val = func Directional n1 side
+                n2Val = func Directional n2 side
+                mult = m Directional position side
             in case (n1Val, n2Val) of
                 (Constant c1 , Constant c2) -> 
                     Constant $ (c1-c2)*mult/interval  

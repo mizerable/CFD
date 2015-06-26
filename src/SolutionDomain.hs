@@ -46,6 +46,7 @@ isConvected p = case p of
     Density -> False
     Mew -> False
     Pressure -> False
+    --Temperature -> False
     _ -> True
 
 isMomentum :: Property -> Bool
@@ -382,7 +383,8 @@ propDirectional property position side env =
                 else propQUICK peclet 
     in case (isObstaclePosition neighbor
                 , isMomentum property 
-                ,elem side ( enumFrom East \\ enumFrom Center ) ) of
+                ,elem side ( enumFrom East \\ enumFrom Center )
+                    && isConvected property ) of
         (True,True,_)-> 0.0
         (_,_,True) -> decide property position side env 
         _ -> propCentralDiff property position side env 
