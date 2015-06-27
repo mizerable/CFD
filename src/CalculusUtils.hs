@@ -39,14 +39,14 @@ approximateDerivative deriv position vs= case deriv of
                 sl =  sideLength direction position vs
                 sln = sideLength direction neighbor vs
                 interval = average [sl, sln ]
-                thisVal = func Nondirectional position Center 
-                neighborVal = func Nondirectional neighbor Center
+                thisVal = func Directional position Center 
+                neighborVal = func Directional neighbor Center
                 neighborIsUpper = isUpperSide side  
                 f first = case (first, neighborIsUpper) of
                     (True, True) -> neighborVal
                     (False, False) -> neighborVal
                     _-> thisVal
-                mult = m Nondirectional position Center
+                mult = m Directional position Center
             in case (f True, f False) of
                 (Constant c1 , Constant c2) -> Constant $ (c1-c2)*mult/interval 
                 _ -> error "can't approx >1 order derivs. deriv must produce constants" 
@@ -101,7 +101,7 @@ multTerm m term  = case term of
 integSurface f position direction unknownProp= do
     vs <- ask
     return $ 
-        let sides = boundaryPair direction 
+        let (s1, s2) = boundaryPair direction 
             value s isUpper =
                 let modf = if isUpper then f 
                         else (\x -> let [res] = multTerm (-1) x
@@ -121,7 +121,7 @@ integSurface f position direction unknownProp= do
                             in Unknown $ if isNaN (val constantVal) 
                                 then 1 else val constantVal      
                         else fmap (* sideAreaVal) term
-        in [value (fst sides) True , value (snd sides) False]       
+        in [value s1 True , value s2 False]       
        
 --integSingleTerm::  (Num a, Fractional a, RealFloat a ) =>  Term a -> DimensionType -> Position -> Property ->Reader (ValSet a) [Term a]
 integSingleTerm term dimetype cellposition unknownProp=  do

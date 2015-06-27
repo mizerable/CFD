@@ -43,9 +43,9 @@ instance Functor Term  where
 
 isConvected :: Property -> Bool
 isConvected p = case p of
-    Density -> False
+    --Density -> False
     Mew -> False
-    Pressure -> False
+    --Pressure -> False
     --Temperature -> False
     _ -> True
 
@@ -378,7 +378,7 @@ propDirectional property position side env =
     let neighbor = offsetPosition position side
         decide =
             let peclet = pecletNumber position side env  
-            in if abs peclet > 2.6
+            in if abs peclet > 99999999
                 then propUpwindDiff peclet  
                 else propQUICK peclet 
     in case (isObstaclePosition neighbor
