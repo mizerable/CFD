@@ -39,14 +39,14 @@ approximateDerivative deriv position vs= case deriv of
                 sl =  sideLength direction position vs
                 sln = sideLength direction neighbor vs
                 interval = average [sl, sln ]
-                thisVal = func Directional position Center 
-                neighborVal = func Directional neighbor Center
+                thisVal = func Nondirectional position Center 
+                neighborVal = func Nondirectional neighbor Center
                 neighborIsUpper = isUpperSide side  
                 f first = case (first, neighborIsUpper) of
                     (True, True) -> neighborVal
                     (False, False) -> neighborVal
                     _-> thisVal
-                mult = m Directional position Center
+                mult = m Nondirectional position Center
             in case (f True, f False) of
                 (Constant c1 , Constant c2) -> Constant $ (c1-c2)*mult/interval 
                 _ -> error "can't approx >1 order derivs. deriv must produce constants" 
@@ -58,9 +58,9 @@ approximateDerivative deriv position vs= case deriv of
                 sln1 = sideLength direction n1 vs
                 sln2 = sideLength direction n2 vs
                 interval = 2 * average [sl,sln1,sln2]
-                n1Val = func Directional n1 side
-                n2Val = func Directional n2 side
-                mult = m Directional position side
+                n1Val = func Nondirectional n1 side
+                n2Val = func Nondirectional n2 side
+                mult = m Nondirectional position side
             in case (n1Val, n2Val) of
                 (Constant c1 , Constant c2) -> 
                     Constant $ (c1-c2)*mult/interval  

@@ -43,9 +43,9 @@ instance Functor Term  where
 
 isConvected :: Property -> Bool
 isConvected p = case p of
-    --Density -> False
+    Density -> False
     Mew -> False
-    --Pressure -> False
+    Pressure -> False
     --Temperature -> False
     _ -> True
 
@@ -378,14 +378,17 @@ propDirectional property position side env =
     let neighbor = offsetPosition position side
         decide =
             let peclet = pecletNumber position side env  
-            in if abs peclet > 99999999
-                then propUpwindDiff peclet  
-                else propQUICK peclet 
+            in if peclet == 0
+                then propCentralDiff
+                else 
+                    if abs peclet > 2.6
+                    then propUpwindDiff peclet  
+                    else propQUICK peclet 
     in case (isObstaclePosition neighbor || isObstaclePosition position
                 , isMomentum property 
                 ,elem side ( enumFrom East \\ enumFrom Center )
                     && isConvected property ) of
-        (True,True,_)-> 0.0
+        --(True,True,_)-> 0.0
         (_,_,True) -> decide property position side env 
         _ -> propCentralDiff property position side env 
         
@@ -447,7 +450,7 @@ propCentralDiff property position side env =
         res p = getVal p (vals env )
     in case (isObstaclePosition neighbor || isObstaclePosition position
                 , isMomentum property, position == neighbor) of
-        (True,True,_) -> 0.0
+        --(True,True,_) -> 0.0
         (_,_,True) -> res position
         _ -> average [ res position, res neighbor]
 
