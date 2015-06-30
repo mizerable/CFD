@@ -70,14 +70,14 @@ storedSteps = 4
 
 maxPos :: Direction -> Int
 maxPos  d = case d of 
-    X -> 300
+    X -> 600
     Y -> 100
     Z -> 0
     Time -> error "no max time position"
     
 gridSize :: Direction -> Double
 gridSize d = case d of 
-    X -> 300
+    X -> 600
     Y -> 100
     Z -> 1
     Time -> error "gridsize for time is the timestep"
