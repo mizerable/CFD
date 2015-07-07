@@ -63,7 +63,7 @@ timeStep :: Double
 timeStep = 0.01
 
 specificHeatCv :: Double
-specificHeatCv = 15
+specificHeatCv = 716
 
 storedSteps:: Int
 storedSteps = 4
@@ -156,10 +156,12 @@ initialGridPre:: ValSet Double
 initialGridPre= 
     let vMap = foldl' (\prev next -> Map.insert next 
             (case next of 
-                U-> 2
+                U-> 4.5
                 V-> 0
                 W-> 0
-                Density -> 1
+                Density -> 1.2
+                Pressure -> 101325
+                Mew -> 0.000018
                 _-> 1
                 ) 
             prev) Map.empty (enumFrom U)

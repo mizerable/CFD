@@ -51,10 +51,10 @@ defaultInflow:: Double
 defaultInflow = 1
 
 gasConstantR :: Double
-gasConstantR = 8.314
+gasConstantR = specificHeatCp - specificHeatCv
 
 specificHeatCp :: Double
-specificHeatCp = gasConstantR + specificHeatCv
+specificHeatCp = 1005
 
 heatConductivityK:: Double
 heatConductivityK = 0.1
