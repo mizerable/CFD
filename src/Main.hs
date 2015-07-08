@@ -237,8 +237,8 @@ allPositionsCurrentTime env =
 
 runSingleStep prev _ = 
     let runSteps steps vs= concat $!
-            runPar $ parMap
-            --map 
+            --runPar $ parMap
+            map 
                 (\step-> applyDiffEq step vs ) 
                 steps  
     in foldl'

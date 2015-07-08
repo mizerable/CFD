@@ -60,25 +60,25 @@ convectionFromDirection d = case d of
     _ -> error "no convection for that direction"    
 
 timeStep :: Double            
-timeStep = 0.00005
+timeStep = 0.0000005
 
 specificHeatCv :: Double
 specificHeatCv = 716
 
 storedSteps:: Int
-storedSteps = 4
+storedSteps = 2
 
 maxPos :: Direction -> Int
 maxPos  d = case d of 
-    X -> 300
-    Y -> 80
+    X -> 640
+    Y -> 320
     Z -> 0
     Time -> error "no max time position"
     
 gridSize :: Direction -> Double
 gridSize d = case d of 
-    X -> 300
-    Y -> 80
+    X -> 1.6
+    Y -> 0.8
     Z -> 1
     Time -> error "gridsize for time is the timestep"
 
@@ -135,10 +135,10 @@ squareBoundsPts :: [Position]
 squareBoundsPts = [
    -- obstacle,
    -- offsetPosition (coordToPos [gridSize X / 4 , gridSize Y / 2 , 0 ] 0) West,
-    coordToPos [gridSize X / 4 , gridSize Y / 2 + 5 , 0 ] 0
-    , coordToPos [gridSize X / 4 + 10, gridSize Y / 2 + 5 , 0 ] 0
-    , coordToPos [gridSize X / 4 + 10, gridSize Y / 2 - 5 , 0 ] 0
-    , coordToPos [gridSize X / 4 , gridSize Y / 2 - 5 , 0 ] 0
+    coordToPos [gridSize X / 4 , gridSize Y / 2 + 0.05 , 0 ] 0
+    , coordToPos [gridSize X / 4 + 0.10, gridSize Y / 2 + 0.05 , 0 ] 0
+    , coordToPos [gridSize X / 4 + 0.10, gridSize Y / 2 - 0.05 , 0 ] 0
+    , coordToPos [gridSize X / 4 , gridSize Y / 2 - 0.05 , 0 ] 0
     ] 
 
 squareBounds :: [Position] 
@@ -156,12 +156,12 @@ initialGridPre:: ValSet Double
 initialGridPre= 
     let vMap = foldl' (\prev next -> Map.insert next 
             (case next of 
-                U-> 400
+                U-> 0.0005
                 V-> 0
                 W-> 0
                 Density -> 1.2
                 Pressure -> 101325
-                Mew -> 1
+                Mew -> 0.000018
                 Temperature -> 290
             ) 
             prev) Map.empty (enumFrom U)
