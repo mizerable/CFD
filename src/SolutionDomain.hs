@@ -60,7 +60,7 @@ convectionFromDirection d = case d of
     _ -> error "no convection for that direction"    
 
 timeStep :: Double            
-timeStep = 0.01
+timeStep = 0.00005
 
 specificHeatCv :: Double
 specificHeatCv = 716
@@ -70,15 +70,15 @@ storedSteps = 4
 
 maxPos :: Direction -> Int
 maxPos  d = case d of 
-    X -> 600
-    Y -> 100
+    X -> 300
+    Y -> 80
     Z -> 0
     Time -> error "no max time position"
     
 gridSize :: Direction -> Double
 gridSize d = case d of 
-    X -> 600
-    Y -> 100
+    X -> 300
+    Y -> 80
     Z -> 1
     Time -> error "gridsize for time is the timestep"
 
@@ -156,14 +156,14 @@ initialGridPre:: ValSet Double
 initialGridPre= 
     let vMap = foldl' (\prev next -> Map.insert next 
             (case next of 
-                U-> 4.5
+                U-> 400
                 V-> 0
                 W-> 0
                 Density -> 1.2
                 Pressure -> 101325
-                Mew -> 0.000018
-                _-> 1
-                ) 
+                Mew -> 1
+                Temperature -> 290
+            ) 
             prev) Map.empty (enumFrom U)
         avMap = foldl' (\prev next ->
                     Map.insert next (
