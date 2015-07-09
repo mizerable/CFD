@@ -60,7 +60,7 @@ convectionFromDirection d = case d of
     _ -> error "no convection for that direction"    
 
 timeStep :: Double            
-timeStep = 0.0000005
+timeStep = 0.0000001
 
 specificHeatCv :: Double
 specificHeatCv = 716
@@ -156,7 +156,7 @@ initialGridPre:: ValSet Double
 initialGridPre= 
     let vMap = foldl' (\prev next -> Map.insert next 
             (case next of 
-                U-> 0.0005
+                U-> 150
                 V-> 0
                 W-> 0
                 Density -> 1.2
@@ -383,9 +383,11 @@ propDirectional property position side env =
             in if peclet == 0
                 then propCentralDiff
                 else 
-                    if abs peclet > 2.6
-                    then propUpwindDiff peclet  
-                    else propQUICK peclet 
+                    if abs peclet < 0.99
+                    then propCentralDiff
+                    else if abs peclet > 2.6
+                        then propUpwindDiff peclet  
+                        else propQUICK peclet 
     in case (isObstaclePosition neighbor || isObstaclePosition position
                 , isMomentum property 
                 ,elem side ( enumFrom East \\ enumFrom Center )
