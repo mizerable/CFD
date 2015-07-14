@@ -3,8 +3,11 @@ module SolutionDomain where
 
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
+import Control.Monad
 import Data.Maybe
 import Data.List
+
+data Sign = Positive | Zero | Negative deriving (Enum,Ord,Eq,Show)
 
 data Side =  Now | Prev |East | West | North | South | Top | Bottom | Center deriving (Show,Eq,Ord, Enum)
   
@@ -41,6 +44,10 @@ instance Functor Term  where
          Unknown u -> Unknown $ f u
          _ -> error "can't fmap other than unknown and constant"
 
+getSign d = case d of   
+    0 -> Zero
+    _ -> if d > 0 then Positive else Negative
+
 isConvected :: Property -> Bool
 isConvected p = case p of
     Density -> False
@@ -60,18 +67,18 @@ convectionFromDirection d = case d of
     _ -> error "no convection for that direction"    
 
 timeStep :: Double            
-timeStep = 0.0000001
+timeStep = 0.0005
 
 specificHeatCv :: Double
 specificHeatCv = 716
 
 storedSteps:: Int
-storedSteps = 2
+storedSteps = 3
 
 maxPos :: Direction -> Int
 maxPos  d = case d of 
-    X -> 640
-    Y -> 320
+    X -> 160
+    Y -> 80
     Z -> 0
     Time -> error "no max time position"
     
@@ -84,12 +91,21 @@ gridSize d = case d of
 
 cellLength d = gridSize d / (fromIntegral $ maxPos d + 1)
 
+getDirectionComponentIndex direction = case direction of
+    X -> 0
+    Y -> 1
+    Z -> 2
+    _ -> error "not defined or not added dimension"
+
 coordToPos coords time = 
     let dirs = enumFrom X
     in Position 
         (map (\x-> round $ coords!!x / (cellLength $ dirs!!x)  ) $ [0.. length coords -1] )
         (length dirs)
         time
+
+posToCoord (Position s _ _ ) direction = 
+    cellLength direction * (fromIntegral $ s!!(getDirectionComponentIndex direction)) 
 
 boundaryPair:: Direction -> (Side,Side)
 boundaryPair d = case d of 
@@ -335,12 +351,6 @@ offsetPosition (Position p d t) side = case side of
         in modifyPositionComponent position direction 
             $ maxOrMin boundary $ getPositionComponent position direction + offsetAmount   
 
-getDirectionComponentIndex direction = case direction of
-    X -> 0
-    Y -> 1
-    Z -> 2
-    _ -> error "not defined or not added dimension"
-
 getPositionComponent:: Position -> Direction -> Int
 getPositionComponent (Position p d t) direction = case direction of 
     Time -> t
@@ -372,9 +382,14 @@ pecletNumber position side env =
         l = sideLength direc position env 
     in (density * momentum * l) / viscosity 
 
-prop schemeType = case schemeType of
-    Directional -> propDirectional
-    Nondirectional -> propCentralDiff
+prop schemeType =
+    let f scheme = (\prop pos side env ->
+            if side == Center || side == Now || side == Prev
+            then propCentralDiff prop pos side env 
+            else scheme prop pos side env) 
+    in case schemeType of
+        Directional -> f propLimitedSlope
+        Nondirectional -> f propLimitedSlope
 
 propDirectional property position side env =
     let neighbor = offsetPosition position side
@@ -426,6 +441,21 @@ propUpwindDiff pec property position side env =
     in if pec >= 0
         then propCentralDiff property (offsetPosition position lower) Center env
         else propCentralDiff property (offsetPosition position upper) Center env
+
+-- http://www.ammar-hakim.org/_static/files/1010-muscl-hancock.pdf
+-- http://bulletin.pan.pl/(60-1)45.pdf
+propLimitedSlope property position side env = 
+    let valCenter = propCentralDiff property position Center env
+        d = directionFromCenter side
+        interval = sideLength d position env
+        (upper, lower) = boundaryPair d
+        upperNVal:(lowerNVal:_)  
+            = map (\s -> propCentralDiff property (offsetPosition position s) Center env) 
+                [upper,lower] 
+        ave = supebee (upperNVal - valCenter) (valCenter - lowerNVal)
+        --ave = ((upperNVal - valCenter)+(valCenter - lowerNVal))/2
+    in (if isUpperSide side then (+) else (-)) valCenter  
+            $ 0.5 * interval * ave   
 
 --prop::(Num a, Fractional a)=> Property->Position->Side-> Reader (ValSet a) a
 propCentralDiff property position side env = 
@@ -556,3 +586,26 @@ sideLength direction (Position p d _) vs = case direction of
             Nothing -> error $ "error getting side length for "++ show p++ " " ++ show direction
             Just len -> len    
 
+chooseSlopeHelper f1 f2 x y =
+    let sign = getSign x 
+    in if (getSign x) == (getSign y)
+        then case sign of
+                Positive -> Just $ f1 x y
+                Negative -> Just $ f2 x y
+                Zero -> Nothing 
+        else Nothing 
+
+chooseSlope f1 f2 n = 
+    let res = foldM
+            (\prev next -> chooseSlopeHelper f1 f2 prev next) 
+            (n!!0) n
+    in case res of
+        Just x -> x
+        Nothing -> 0.0 
+
+minmod = chooseSlope min max
+maxmod = chooseSlope max min
+
+supebee a b = minmod [maxmod [a,b], minmod [2*a,2*b] ]
+
+    
