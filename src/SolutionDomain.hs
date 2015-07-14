@@ -66,9 +66,6 @@ convectionFromDirection d = case d of
     Z -> W
     _ -> error "no convection for that direction"    
 
-timeStep :: Double            
-timeStep = 0.0005
-
 specificHeatCv :: Double
 specificHeatCv = 716
 
@@ -77,8 +74,8 @@ storedSteps = 3
 
 maxPos :: Direction -> Int
 maxPos  d = case d of 
-    X -> 160
-    Y -> 80
+    X -> 640
+    Y -> 320
     Z -> 0
     Time -> error "no max time position"
     
@@ -168,11 +165,14 @@ obstacles =
         --squareBounds
         filled ++ filledGaps
 
+timeStep :: Double            
+timeStep = 0.00005
+
 initialGridPre:: ValSet Double
 initialGridPre= 
     let vMap = foldl' (\prev next -> Map.insert next 
             (case next of 
-                U-> 150
+                U-> 10
                 V-> 0
                 W-> 0
                 Density -> 1.2
@@ -452,7 +452,7 @@ propLimitedSlope property position side env =
         upperNVal:(lowerNVal:_)  
             = map (\s -> propCentralDiff property (offsetPosition position s) Center env) 
                 [upper,lower] 
-        ave = supebee (upperNVal - valCenter) (valCenter - lowerNVal)
+        ave = superbee (upperNVal - valCenter) (valCenter - lowerNVal)
         --ave = ((upperNVal - valCenter)+(valCenter - lowerNVal))/2
     in (if isUpperSide side then (+) else (-)) valCenter  
             $ 0.5 * interval * ave   
@@ -606,6 +606,6 @@ chooseSlope f1 f2 n =
 minmod = chooseSlope min max
 maxmod = chooseSlope max min
 
-supebee a b = minmod [maxmod [a,b], minmod [2*a,2*b] ]
+superbee a b = minmod [maxmod [a,b], minmod [2*a,2*b] ]
 
     
