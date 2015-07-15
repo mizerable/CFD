@@ -74,8 +74,8 @@ storedSteps = 3
 
 maxPos :: Direction -> Int
 maxPos  d = case d of 
-    X -> 640
-    Y -> 320
+    X -> 320
+    Y -> 160
     Z -> 0
     Time -> error "no max time position"
     
@@ -172,7 +172,7 @@ initialGridPre:: ValSet Double
 initialGridPre= 
     let vMap = foldl' (\prev next -> Map.insert next 
             (case next of 
-                U-> 10
+                U-> 20
                 V-> 0
                 W-> 0
                 Density -> 1.2
@@ -452,10 +452,12 @@ propLimitedSlope property position side env =
         upperNVal:(lowerNVal:_)  
             = map (\s -> propCentralDiff property (offsetPosition position s) Center env) 
                 [upper,lower] 
-        ave = superbee (upperNVal - valCenter) (valCenter - lowerNVal)
+        --ave = superbee (upperNVal - valCenter) (valCenter - lowerNVal)
+        ave = epsilon (upperNVal - valCenter) (valCenter - lowerNVal) (interval *interval *interval)
+        --ave = minmodLimit (upperNVal - valCenter) (valCenter - lowerNVal)
         --ave = ((upperNVal - valCenter)+(valCenter - lowerNVal))/2
     in (if isUpperSide side then (+) else (-)) valCenter  
-            $ 0.5 * interval * ave   
+            $ 0.5 * ave   
 
 --prop::(Num a, Fractional a)=> Property->Position->Side-> Reader (ValSet a) a
 propCentralDiff property position side env = 
@@ -608,4 +610,7 @@ maxmod = chooseSlope max min
 
 superbee a b = minmod [maxmod [a,b], minmod [2*a,2*b] ]
 
-    
+minmodLimit a b = minmod [ (a + b) /2 , 2*a, 2*b ]
+
+epsilon a b eSq = ( ((b*b + eSq )*a)  + ((a*a+eSq)*b) ) / ((a*a) + (b*b) + (2*eSq)) 
+   
