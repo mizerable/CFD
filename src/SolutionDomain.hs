@@ -166,18 +166,18 @@ obstacles =
         filled ++ filledGaps
 
 timeStep :: Double            
-timeStep = 0.00005
+timeStep = 0.000001
 
 initialGridPre:: ValSet Double
 initialGridPre= 
     let vMap = foldl' (\prev next -> Map.insert next 
             (case next of 
-                U-> 20
+                U-> 200
                 V-> 0
                 W-> 0
                 Density -> 1.2
                 Pressure -> 101325
-                Mew -> 0.000018
+                Mew -> 0.5-- 0.000018
                 Temperature -> 290
             ) 
             prev) Map.empty (enumFrom U)
@@ -453,8 +453,8 @@ propLimitedSlope property position side env =
             = map (\s -> propCentralDiff property (offsetPosition position s) Center env) 
                 [upper,lower] 
         --ave = superbee (upperNVal - valCenter) (valCenter - lowerNVal)
-        ave = epsilon (upperNVal - valCenter) (valCenter - lowerNVal) (interval *interval *interval)
-        --ave = minmodLimit (upperNVal - valCenter) (valCenter - lowerNVal)
+        --ave = epsilon (upperNVal - valCenter) (valCenter - lowerNVal) (interval *interval *interval)
+        ave = minmodLimit (upperNVal - valCenter) (valCenter - lowerNVal)
         --ave = ((upperNVal - valCenter)+(valCenter - lowerNVal))/2
     in (if isUpperSide side then (+) else (-)) valCenter  
             $ 0.5 * ave   
