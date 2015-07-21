@@ -20,7 +20,7 @@ data Equation a = Equation{
     ,rhs:: ![a]
     ,unknownProperty:: !Property}    
 data IntegralType = Body | Surface deriving (Eq)
-data Property = U | V | W | Density | Temperature | Mew | Pressure deriving (Ord,Eq,Enum,Show)
+data Property = Speed | U | V | W | Density | Temperature | Mew | Pressure deriving (Ord,Eq,Enum,Show)
 data Position = Position {
     spatialPos:: ![Int]
     ,spatialDimens :: !Int 
@@ -172,7 +172,7 @@ initialGridPre:: ValSet Double
 initialGridPre= 
     let vMap = foldl' (\prev next -> Map.insert next 
             (case next of 
-                U-> 200
+                U-> 100
                 V-> 0
                 W-> 0
                 Density -> 1.2
@@ -383,13 +383,22 @@ pecletNumber position side env =
     in (density * momentum * l) / viscosity 
 
 prop schemeType =
-    let f scheme = (\prop pos side env ->
+    let f scheme = (\property pos side env ->
             if side == Center || side == Now || side == Prev
-            then propCentralDiff prop pos side env 
-            else scheme prop pos side env) 
-    in case schemeType of
-        Directional -> f propLimitedSlope
-        Nondirectional -> f propLimitedSlope
+            then propCentralDiff property pos side env 
+            else scheme property pos side env) 
+    in 
+        let scheme = case schemeType of
+                Directional -> f propLimitedSlope
+                Nondirectional -> f propLimitedSlope
+        in \property pos side env-> case property of
+                Speed-> 
+                    let momentums = enumFrom U \\ enumFrom Density
+                    in sqrt $ foldl' (\prev next ->
+                        let nVal = scheme next pos side env
+                        in prev + (nVal*nVal)) 
+                        0.0 momentums  
+                _-> scheme property pos side env  
 
 propDirectional property position side env =
     let neighbor = offsetPosition position side

@@ -259,7 +259,7 @@ runTimeSteps_Print =
                 (\nextProp ->
                     GP.plotAsync ( PNG.cons $ "c:\\temp\\"++ show nextProp ++ "\\"++show step ++".png") 
                     $! plotDomain $! valSetToGrid prev timeLevel nextProp (1+maxPos Y) (quot (maxPos Z)  2)
-                ) $ enumFrom U
+                ) $ enumFrom Speed
             ---}
             putStrLn $ show $ length (calculatedPositions prev)
             putStrLn $ "step: " ++ show step 
