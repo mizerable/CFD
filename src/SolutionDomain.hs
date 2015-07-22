@@ -461,9 +461,10 @@ propLimitedSlope property position side env =
         upperNVal:(lowerNVal:_)  
             = map (\s -> propCentralDiff property (offsetPosition position s) Center env) 
                 [upper,lower] 
-        ave = superbee (upperNVal - valCenter) (valCenter - lowerNVal)
+        --ave = superbee (upperNVal - valCenter) (valCenter - lowerNVal)
         --ave = epsilon (upperNVal - valCenter) (valCenter - lowerNVal) (interval *interval *interval)
         --ave = minmodLimit (upperNVal - valCenter) (valCenter - lowerNVal)
+        ave = vanLeer (upperNVal - valCenter) (valCenter - lowerNVal)
         --ave = ((upperNVal - valCenter)+(valCenter - lowerNVal))/2
     in (if isUpperSide side then (+) else (-)) valCenter  
             $ 0.5 * ave   
@@ -622,4 +623,14 @@ superbee a b = minmod [maxmod [a,b], minmod [2*a,2*b] ]
 minmodLimit a b = minmod [ (a + b) /2 , 2*a, 2*b ]
 
 epsilon a b eSq = ( ((b*b + eSq )*a)  + ((a*a+eSq)*b) ) / ((a*a) + (b*b) + (2*eSq)) 
-   
+
+vanLeer a b = 
+    let expression steep shallow = 
+            let r = steep/shallow
+                abs_r = abs r
+            in shallow * (r+abs_r)/(1+abs_r)
+    in case (getSign a, getSign b) of
+        (Positive,Positive) -> expression (max a b) (min a b)
+        (Negative,Negative) -> expression  (min a b) (max a b)
+        _-> 0.0 
+       
