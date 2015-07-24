@@ -74,15 +74,15 @@ storedSteps = 3
 
 maxPos :: Direction -> Int
 maxPos  d = case d of 
-    X -> 320
-    Y -> 160
+    X -> 200
+    Y -> 100
     Z -> 0
     Time -> error "no max time position"
     
 gridSize :: Direction -> Double
 gridSize d = case d of 
-    X -> 1.6
-    Y -> 0.8
+    X -> 16
+    Y -> 8
     Z -> 1
     Time -> error "gridsize for time is the timestep"
 
@@ -148,10 +148,10 @@ squareBoundsPts :: [Position]
 squareBoundsPts = [
    -- obstacle,
    -- offsetPosition (coordToPos [gridSize X / 4 , gridSize Y / 2 , 0 ] 0) West,
-    coordToPos [gridSize X / 4 , gridSize Y / 2 + 0.05 , 0 ] 0
-    , coordToPos [gridSize X / 4 + 0.10, gridSize Y / 2 + 0.05 , 0 ] 0
-    , coordToPos [gridSize X / 4 + 0.10, gridSize Y / 2 - 0.05 , 0 ] 0
-    , coordToPos [gridSize X / 4 , gridSize Y / 2 - 0.05 , 0 ] 0
+    coordToPos [gridSize X / 4 , gridSize Y / 2 + 0.5 , 0 ] 0
+    , coordToPos [gridSize X / 4 + 1, gridSize Y / 2 + 0.5 , 0 ] 0
+    , coordToPos [gridSize X / 4 + 1, gridSize Y / 2 - 0.5 , 0 ] 0
+    , coordToPos [gridSize X / 4 , gridSize Y / 2 - 0.5 , 0 ] 0
     ] 
 
 squareBounds :: [Position] 
@@ -168,6 +168,15 @@ obstacles =
 timeStep :: Double            
 timeStep = 0.000001
 
+initialMew =  3-- 0.000018
+
+initialTemperature = 290
+
+sutherlandConstant = 120
+
+sutherlandLambda = 
+    initialMew *( initialTemperature + sutherlandConstant) / (initialTemperature**1.5)
+
 initialGridPre:: ValSet Double
 initialGridPre= 
     let vMap = foldl' (\prev next -> Map.insert next 
@@ -177,8 +186,8 @@ initialGridPre=
                 W-> 0
                 Density -> 1.2
                 Pressure -> 101325
-                Mew -> 0.5-- 0.000018
-                Temperature -> 290
+                Mew -> initialMew
+                Temperature -> initialTemperature
             ) 
             prev) Map.empty (enumFrom U)
         avMap = foldl' (\prev next ->
@@ -398,6 +407,9 @@ prop schemeType =
                         let nVal = scheme next pos side env
                         in prev + (nVal*nVal)) 
                         0.0 momentums  
+                Mew -> 
+                    let t = scheme Temperature pos side env 
+                    in sutherlandLambda * (t**1.5)/ (t + sutherlandConstant)
                 _-> scheme property pos side env  
 
 propDirectional property position side env =
