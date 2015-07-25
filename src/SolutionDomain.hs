@@ -6,6 +6,9 @@ import qualified Data.Set as Set
 import Control.Monad
 import Data.Maybe
 import Data.List
+import GeometryStuff
+import System.Random.Shuffle
+import System.Random
 
 data Sign = Positive | Zero | Negative deriving (Enum,Ord,Eq,Show)
 
@@ -168,9 +171,9 @@ obstacles =
         filled ++ filledGaps
 
 timeStep :: Double            
-timeStep = 0.0000005
+timeStep = 0.000005
 
-initialMew =  1.5-- 0.000018
+initialMew =  1.0-- 0.000018
 
 initialTemperature = 290
 
@@ -546,10 +549,15 @@ isBetween p1 p2 testPt vs=
         
 connectTwo p1 p2 allPos vs = filter (isBetween p1 p2 vs) allPos
 
+getNeighborsCorners position =
+    let cross = filter (\(a,b) -> a /= b ) [(x,y) | x <- enumFrom East, y<-enumFrom East] 
+        n = nub $ filter (\x -> x /= position)
+            $ map (\(a,b) -> offsetPosition (offsetPosition position a) b ) cross
+    in shuffle' n (length n) $ mkStdGen $ sum $ spatialPos position
+
 getNeighbors position =
-    let cross = filter (\(a,b) -> a /= b ) [(x,y) | x <- enumFrom East, y<-enumFrom East]
-    in nub $ filter (\x -> x /= position)
-        $ map (\(a,b) -> offsetPosition (offsetPosition position a) b ) cross
+    nub $ filter (\x -> x /= position)
+        $ map (\x -> offsetPosition position x ) $ enumFrom East
 
 tracePath g end path = 
     let prev = Map.lookup end g
@@ -559,19 +567,24 @@ tracePath g end path =
             then path 
             else tracePath g p $ p:path  
 
-hugeNumber = 99999999999
+hugeNumber = 99999999999.9
+rounder f n = (fromInteger $ round $ f * (10^n)) / (10.0^^n)
 
 shortestPath unvisited end visited = if unvisited==Map.empty 
     then error "problem in shortest path.. searched everything and wasn't found" 
     else 
-        let (pos, (dist,predecessor )) = 
-                foldl' (\(p1,(p2,p3) ) (n1,(n2,n3)) -> if n2 < p2 then (n1,(n2,n3)) else (p1,(p2,p3))  ) 
-                        (end,(hugeNumber,end)) $ Map.toList unvisited 
-            neighbors = filter (\y -> Map.notMember y visited) $ getNeighbors pos 
+        let comparer a= if mod (Map.size unvisited * Map.size visited + a ) 2 < 1 
+                then (<) else (<=)
+            (pos, (dist,predecessor )) = 
+                foldl' (\(p1,(p2,p3) ) (n1,(n2,n3)) -> if comparer (fromIntegral $ round $ n2*p2*57) n2  p2 
+                            then (n1,(n2,n3)) else (p1,(p2,p3))  ) 
+                        (end,(hugeNumber,end)) 
+                        $ shuffle' (Map.toList unvisited) (Map.size unvisited) $ mkStdGen 137
+            neighbors = filter (\y -> Map.notMember y visited) $ getNeighborsCorners pos 
             updatedUnvisited = foldl' (\prev next -> 
                     let newd = (distance next pos) + dist
                         oldd = fst $ fromMaybe (hugeNumber,end) (Map.lookup next prev) 
-                    in if newd < oldd 
+                    in if comparer (fromIntegral $ round $ newd*oldd*57) newd oldd 
                         then Map.insert next (newd,pos) prev
                         else prev
                 ) (Map.delete pos unvisited) neighbors
