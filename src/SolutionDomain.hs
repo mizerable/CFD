@@ -164,8 +164,8 @@ obstacles =
     let filled =  fillObInterior (Set.fromList squareBounds) $! [offsetPosition obstacle East]
         filledGaps = fillEnclosedGaps makeAllPositions $ Set.fromList filled
     in  -- squareBoundsPts
-        squareBounds
-        --filled ++ filledGaps
+        --squareBounds
+        filled ++ filledGaps
 
 timeStep :: Double            
 timeStep = 0.0000005
