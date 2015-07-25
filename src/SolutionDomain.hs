@@ -81,8 +81,8 @@ maxPos  d = case d of
     
 gridSize :: Direction -> Double
 gridSize d = case d of 
-    X -> 16
-    Y -> 8
+    X -> 1.6
+    Y -> 0.8
     Z -> 1
     Time -> error "gridsize for time is the timestep"
 
@@ -148,10 +148,12 @@ squareBoundsPts :: [Position]
 squareBoundsPts = [
    -- obstacle,
    -- offsetPosition (coordToPos [gridSize X / 4 , gridSize Y / 2 , 0 ] 0) West,
-    coordToPos [gridSize X / 4 , gridSize Y / 2 + 0.5 , 0 ] 0
-    , coordToPos [gridSize X / 4 + 1, gridSize Y / 2 + 0.5 , 0 ] 0
-    , coordToPos [gridSize X / 4 + 1, gridSize Y / 2 - 0.5 , 0 ] 0
-    , coordToPos [gridSize X / 4 , gridSize Y / 2 - 0.5 , 0 ] 0
+    coordToPos [gridSize X / 4 - 0.12, gridSize Y / 2  , 0 ] 0
+    , coordToPos [gridSize X / 4 , gridSize Y / 2 + 0.05 , 0 ] 0
+    , coordToPos [gridSize X / 4 + 0.1, gridSize Y / 2 + 0.05 , 0 ] 0
+    , coordToPos [gridSize X / 4 + 0.12, gridSize Y / 2  , 0 ] 0
+    , coordToPos [gridSize X / 4 + 0.1, gridSize Y / 2 - 0.05 , 0 ] 0
+    , coordToPos [gridSize X / 4 , gridSize Y / 2 - 0.05 , 0 ] 0
     ] 
 
 squareBounds :: [Position] 
@@ -161,14 +163,14 @@ obstacles :: [Position]
 obstacles = 
     let filled =  fillObInterior (Set.fromList squareBounds) $! [offsetPosition obstacle East]
         filledGaps = fillEnclosedGaps makeAllPositions $ Set.fromList filled
-    in  --squareBoundsPts
-        --squareBounds
-        filled ++ filledGaps
+    in  -- squareBoundsPts
+        squareBounds
+        --filled ++ filledGaps
 
 timeStep :: Double            
-timeStep = 0.000001
+timeStep = 0.0000005
 
-initialMew =  3-- 0.000018
+initialMew =  1.5-- 0.000018
 
 initialTemperature = 290
 
@@ -522,13 +524,10 @@ fillObInterior obBounds points = case points of
         in fillObInterior (Set.union obBounds $ Set.fromList unvN) $ xs ++ unvN
         
 distanceSquared :: Position -> Position -> Double        
-distanceSquared p1 p2 = 
-    fromIntegral $
-    foldl' (\prev next -> 
-            let diff = (getPositionComponent p1 next) - (getPositionComponent p2 next) 
-            in prev + ( diff * diff )      
-        ) 0 $ enumFrom X         
-        
+distanceSquared (Position sp1 _ _) (Position sp2 _ _) = 
+    let components = zip sp1 sp2         
+    in fromIntegral $ foldl' (\prev (a,b) -> prev + (a-b)*(a-b) ) 0 components
+    
 distance:: Position -> Position -> Double    
 distance p1 p2 = sqrt $ distanceSquared p1 p2 
         
@@ -548,30 +547,47 @@ isBetween p1 p2 testPt vs=
 connectTwo p1 p2 allPos vs = filter (isBetween p1 p2 vs) allPos
 
 getNeighbors position =
-    map (\x-> offsetPosition position x)  
-    $ filter (\x -> position /= (offsetPosition position x) ) $ enumFrom East
+    let cross = filter (\(a,b) -> a /= b ) [(x,y) | x <- enumFrom East, y<-enumFrom East]
+    in nub $ filter (\x -> x /= position)
+        $ map (\(a,b) -> offsetPosition (offsetPosition position a) b ) cross
 
 tracePath g end path = 
     let prev = Map.lookup end g
     in case prev of
         Nothing -> path
-        Just p -> if p == end 
+        Just (_, p) -> if p == end 
             then path 
             else tracePath g p $ p:path  
 
-shortestPath :: [Position] -> Position -> Map.Map Position Position -> [Position]
-shortestPath q end g = case q of
-    [] -> error "problem in shortest path.. searched everything and wasn't found" 
-    x:xs ->  case x == end of 
-        True -> tracePath g end []
-        False ->
-            let n = filter (\y -> Map.notMember y g) $ getNeighbors x
-            in shortestPath (xs ++ n) end 
-                $ foldl' (\prev next -> Map.insert next x prev ) g n  
-            
-connectBounds :: [Position] -> [Position] -> [Position]
+hugeNumber = 99999999999
+
+shortestPath unvisited end visited = if unvisited==Map.empty 
+    then error "problem in shortest path.. searched everything and wasn't found" 
+    else 
+        let (pos, (dist,predecessor )) = 
+                foldl' (\(p1,(p2,p3) ) (n1,(n2,n3)) -> if n2 < p2 then (n1,(n2,n3)) else (p1,(p2,p3))  ) 
+                        (end,(hugeNumber,end)) $ Map.toList unvisited 
+            neighbors = filter (\y -> Map.notMember y visited) $ getNeighbors pos 
+            updatedUnvisited = foldl' (\prev next -> 
+                    let newd = (distance next pos) + dist
+                        oldd = fst $ fromMaybe (hugeNumber,end) (Map.lookup next prev) 
+                    in if newd < oldd 
+                        then Map.insert next (newd,pos) prev
+                        else prev
+                ) (Map.delete pos unvisited) neighbors
+            updatedVisited = Map.insert pos (dist,predecessor ) visited
+        in case pos == end of
+            True -> tracePath updatedVisited end []
+            False -> shortestPath updatedUnvisited end updatedVisited
+           
 connectBounds allPos points = fst $ foldl' 
-    (\(prevPts, lastPt) next -> ( prevPts ++ shortestPath [lastPt] next (Map.insert lastPt lastPt Map.empty) , next) ) 
+    (\(prevPts, lastPt) next -> 
+        ( prevPts 
+            ++ shortestPath 
+                (Map.insert lastPt (0.0,lastPt) Map.empty) 
+                next 
+                Map.empty 
+        , next) ) 
     ([],last points) points
 
 fillEnclosedGaps :: [Position] -> Set.Set Position -> [Position]
