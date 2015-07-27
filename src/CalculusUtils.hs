@@ -30,43 +30,6 @@ d2C d = case d of
     Z -> W
     _ -> error "other directions don't have an associated property"
 
---approximateDerivative::(Num a, Fractional a)=>  Term a -> Position-> ValSet a -> Term a
-approximateDerivative deriv position vs= case deriv of 
-    (Derivative direction func side m) ->
-        if directionFromCenter side == direction 
-        then
-            let neighbor = offsetPosition position side
-                sl =  sideLength direction position vs
-                sln = sideLength direction neighbor vs
-                interval = average [sl, sln ]
-                thisVal = func Nondirectional position Center 
-                neighborVal = func Nondirectional neighbor Center
-                neighborIsUpper = isUpperSide side  
-                f first = case (first, neighborIsUpper) of
-                    (True, True) -> neighborVal
-                    (False, False) -> neighborVal
-                    _-> thisVal
-                mult = m Nondirectional position Center
-            in case (f True, f False) of
-                (Constant c1 , Constant c2) -> Constant $ (c1-c2)*mult/interval 
-                _ -> error "can't approx >1 order derivs. deriv must produce constants" 
-        else
-            let (s1, s2) = boundaryPair direction
-                n1 = (offsetPosition position s1)
-                n2 = (offsetPosition position s2)
-                sl =  sideLength direction position vs
-                sln1 = sideLength direction n1 vs
-                sln2 = sideLength direction n2 vs
-                interval = 2 * average [sl,sln1,sln2]
-                n1Val = func Nondirectional n1 side
-                n2Val = func Nondirectional n2 side
-                mult = m Nondirectional position side
-            in case (n1Val, n2Val) of
-                (Constant c1 , Constant c2) -> 
-                    Constant $ (c1-c2)*mult/interval  
-                _ -> error "can't approx >1 order derivs. deriv must produce constants"
-    _ -> error "can't approx something that isn't a deriv"
-
 --solveUnknown::(Fractional a)=> Equation (SchemeType ->Term a)->Position->a
 solveUnknown (Equation l r _) position vs= 
     let sumUnknown p n =  p + case n of

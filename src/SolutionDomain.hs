@@ -23,7 +23,7 @@ data Equation a = Equation{
     ,rhs:: ![a]
     ,unknownProperty:: !Property}    
 data IntegralType = Body | Surface deriving (Eq)
-data Property = Speed | U | V | W | Density | Temperature | Mew | Pressure deriving (Ord,Eq,Enum,Show)
+data Property = Speed | Vorticity | U | V | W | Density | Temperature | Mew | Pressure deriving (Ord,Eq,Enum,Show)
 data Position = Position {
     spatialPos:: ![Int]
     ,spatialDimens :: !Int 
@@ -67,6 +67,12 @@ convectionFromDirection d = case d of
     X -> U
     Y -> V
     Z -> W
+    _ -> error "no convection for that direction"    
+ 
+directionFromConvection d = case d of
+    U -> X
+    V -> Y
+    W -> Z
     _ -> error "no convection for that direction"    
 
 specificHeatCv :: Double
@@ -151,10 +157,10 @@ squareBoundsPts :: [Position]
 squareBoundsPts = [
    -- obstacle,
    -- offsetPosition (coordToPos [gridSize X / 4 , gridSize Y / 2 , 0 ] 0) West,
-    coordToPos [gridSize X / 4 - 0.12, gridSize Y / 2  , 0 ] 0
-    , coordToPos [gridSize X / 4 , gridSize Y / 2 + 0.05 , 0 ] 0
+    --coordToPos [gridSize X / 4 - 0.12, gridSize Y / 2  , 0 ] 0
+     coordToPos [gridSize X / 4 , gridSize Y / 2 + 0.05 , 0 ] 0
     , coordToPos [gridSize X / 4 + 0.1, gridSize Y / 2 + 0.05 , 0 ] 0
-    , coordToPos [gridSize X / 4 + 0.12, gridSize Y / 2  , 0 ] 0
+    --, coordToPos [gridSize X / 4 + 0.12, gridSize Y / 2  , 0 ] 0
     , coordToPos [gridSize X / 4 + 0.1, gridSize Y / 2 - 0.05 , 0 ] 0
     , coordToPos [gridSize X / 4 , gridSize Y / 2 - 0.05 , 0 ] 0
     ] 
@@ -171,9 +177,9 @@ obstacles =
         filled ++ filledGaps
 
 timeStep :: Double            
-timeStep = 0.000005
+timeStep = 0.000001
 
-initialMew =  1.0-- 0.000018
+initialMew =  1-- 0.000018
 
 initialTemperature = 290
 
@@ -186,7 +192,7 @@ initialGridPre:: ValSet Double
 initialGridPre= 
     let vMap = foldl' (\prev next -> Map.insert next 
             (case next of 
-                U-> 100
+                U-> 50
                 V-> 0
                 W-> 0
                 Density -> 1.2
@@ -396,6 +402,45 @@ pecletNumber position side env =
         l = sideLength direc position env 
     in (density * momentum * l) / viscosity 
 
+--approximateDerivative::(Num a, Fractional a)=>  Term a -> Position-> ValSet a -> Term a
+approximateDerivative deriv position vs= case deriv of 
+    (Derivative direction func side m) ->
+        if directionFromCenter side == direction 
+        then
+            let neighbor = offsetPosition position side
+                sl =  sideLength direction position vs
+                sln = sideLength direction neighbor vs
+                interval = average [sl, sln ]
+                thisVal = func Nondirectional position Center 
+                neighborVal = func Nondirectional neighbor Center
+                neighborIsUpper = isUpperSide side  
+                f first = case (first, neighborIsUpper) of
+                    (True, True) -> neighborVal
+                    (False, False) -> neighborVal
+                    _-> thisVal
+                mult = m Nondirectional position Center
+            in case (f True, f False) of
+                (Constant c1 , Constant c2) -> Constant $ (c1-c2)*mult/interval 
+                _ -> error "can't approx >1 order derivs. deriv must produce constants" 
+        else
+            let (s1, s2) = boundaryPair direction
+                n1 = (offsetPosition position s1)
+                n2 = (offsetPosition position s2)
+                sl =  sideLength direction position vs
+                sln1 = sideLength direction n1 vs
+                sln2 = sideLength direction n2 vs
+                interval = 2 * average [sl,sln1,sln2]
+                n1Val = func Nondirectional n1 side
+                n2Val = func Nondirectional n2 side
+                mult = m Nondirectional position side
+            in case (n1Val, n2Val) of
+                (Constant c1 , Constant c2) -> 
+                    Constant $ (c1-c2)*mult/interval  
+                _ -> error "can't approx >1 order derivs. deriv must produce constants"
+    _ -> error "can't approx something that isn't a deriv"
+
+magnitude v = sqrt $ foldl' (\prev nVal ->prev + (nVal*nVal)) 0.0 v
+
 prop schemeType =
     let f scheme = (\property pos side env ->
             if side == Center || side == Now || side == Prev
@@ -405,13 +450,22 @@ prop schemeType =
         let scheme = case schemeType of
                 Directional -> f propLimitedSlope
                 Nondirectional -> f propLimitedSlope
+            momentums = enumFrom U \\ enumFrom Density
         in \property pos side env-> case property of
-                Speed-> 
-                    let momentums = enumFrom U \\ enumFrom Density
-                    in sqrt $ foldl' (\prev next ->
-                        let nVal = scheme next pos side env
-                        in prev + (nVal*nVal)) 
-                        0.0 momentums  
+                Speed-> magnitude $ map (\next -> scheme next pos side env) momentums   
+                Vorticity -> 
+                    let pairs = [(x,y) | x <- momentums , y <- tail $ dropWhile (/= x) momentums ]
+                        vortComponents = map (\(a,b) ->
+                                let makeDeriv m n 
+                                        = Derivative (directionFromConvection m) 
+                                            (\_ p s -> Constant $ scheme n p s env) Center 
+                                            (\_ _ _ -> 1) 
+                                    deriv1 = makeDeriv a b
+                                    deriv2 = makeDeriv b a
+                                in (val $ approximateDerivative deriv1 pos env)
+                                    - (val $ approximateDerivative deriv2 pos env)    
+                            ) pairs
+                    in magnitude vortComponents 
                 Mew -> 
                     let t = scheme Temperature pos side env 
                     in sutherlandLambda * (t**1.5)/ (t + sutherlandConstant)
