@@ -47,9 +47,6 @@ plotDomain grid =
 
 ---}
 
-defaultInflow:: Double
-defaultInflow = 1
-
 gasConstantR :: Double
 gasConstantR = specificHeatCp - specificHeatCv
 
@@ -57,7 +54,7 @@ specificHeatCp :: Double
 specificHeatCp = 1005
 
 heatConductivityK:: Double
-heatConductivityK = 0.1
+heatConductivityK = 0.025
 
 orthogonalSides:: Side ->[Side]
 orthogonalSides side = case side of

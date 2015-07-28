@@ -83,8 +83,8 @@ storedSteps = 3
 
 maxPos :: Direction -> Int
 maxPos  d = case d of 
-    X -> 200
-    Y -> 100
+    X -> 400
+    Y -> 200
     Z -> 0
     Time -> error "no max time position"
     
@@ -179,9 +179,9 @@ obstacles =
 timeStep :: Double            
 timeStep = 0.000001
 
-initialMew =  1-- 0.000018
+initialMew =  0.1-- 0.000018
 
-initialTemperature = 290
+initialTemperature = 223
 
 sutherlandConstant = 120
 
@@ -195,8 +195,8 @@ initialGridPre=
                 U-> 50
                 V-> 0
                 W-> 0
-                Density -> 1.2
-                Pressure -> 101325
+                Density -> 0.3 -- 1.2
+                Pressure -> 10000 -- 101325   doesn't matter, gets solved based on density and temperature. 
                 Mew -> initialMew
                 Temperature -> initialTemperature
             ) 
@@ -458,7 +458,7 @@ prop schemeType =
                         vortComponents = map (\(a,b) ->
                                 let makeDeriv m n 
                                         = Derivative (directionFromConvection m) 
-                                            (\_ p s -> Constant $ scheme n p s env) Center 
+                                            (\_ p s -> Constant $ scheme n p s env) East -- east is arbitrary here  
                                             (\_ _ _ -> 1) 
                                     deriv1 = makeDeriv a b
                                     deriv2 = makeDeriv b a
@@ -535,7 +535,8 @@ propLimitedSlope property position side env =
         --ave = superbee (upperNVal - valCenter) (valCenter - lowerNVal)
         --ave = epsilon (upperNVal - valCenter) (valCenter - lowerNVal) (interval *interval *interval)
         --ave = minmodLimit (upperNVal - valCenter) (valCenter - lowerNVal)
-        ave = vanLeer (upperNVal - valCenter) (valCenter - lowerNVal)
+        ave = ospre (upperNVal - valCenter) (valCenter - lowerNVal)
+        -- ave = vanLeer (upperNVal - valCenter) (valCenter - lowerNVal)
         --ave = ((upperNVal - valCenter)+(valCenter - lowerNVal))/2
     in (if isUpperSide side then (+) else (-)) valCenter  
             $ 0.5 * ave   
@@ -719,13 +720,18 @@ minmodLimit a b = minmod [ (a + b) /2 , 2*a, 2*b ]
 
 epsilon a b eSq = ( ((b*b + eSq )*a)  + ((a*a+eSq)*b) ) / ((a*a) + (b*b) + (2*eSq)) 
 
-vanLeer a b = 
+vanLeer = altFormLimiter (\r -> let abs_r = abs r in (r+abs_r)/(1+abs_r) )  
+
+ospre = altFormLimiter (\r -> 1.5 * (r*r + r) / (r*r + r + 1) )
+
+altFormLimiter rFunc a b = 
     let expression steep shallow = 
             let r = steep/shallow
-                abs_r = abs r
-            in shallow * (r+abs_r)/(1+abs_r)
+            in shallow * rFunc r
     in case (getSign a, getSign b) of
         (Positive,Positive) -> expression (max a b) (min a b)
         (Negative,Negative) -> expression  (min a b) (max a b)
         _-> 0.0 
+
+
        
