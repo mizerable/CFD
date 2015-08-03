@@ -36,11 +36,12 @@ plotDomain grid =
         ysize = length  grid  -1
         printSize = (show $ ysize * 5)++","++(show $ xsize * 5)
     in Frame.cons 
-            ( Opts.add ( 
-                Opt.custom "terminal pngcairo size" printSize) [printSize] $ 
-                Opts.sizeRatio ((fromIntegral xsize)/(fromIntegral ysize)) $ defltOpts )
-            --(Opts.sizeRatio ((fromIntegral xsize)/(fromIntegral ysize)) $ defltOpts)
-        $ Plot2D.function Graph2D.image 
+            (   Opts.add ( Opt.custom "terminal pngcairo size" printSize) [printSize] $ 
+                Opts.add ( Opt.custom "logscale cb"  "") [] $
+                Opts.sizeRatio ((fromIntegral xsize)/(fromIntegral ysize)) $ 
+                defltOpts 
+            ) $
+        Plot2D.function Graph2D.image 
         (liftM2 (,)  [0..ysize] [0..xsize]) 
             $ \(x,y) -> (grid!!x)!!y
              
