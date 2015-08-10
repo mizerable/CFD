@@ -83,8 +83,8 @@ storedSteps = 3
 
 maxPos :: Direction -> Int
 maxPos  d = case d of 
-    X -> 300
-    Y -> 150
+    X -> 180
+    Y -> 90
     Z -> 0
     Time -> error "no max time position"
     
@@ -177,7 +177,7 @@ obstacles =
         filled ++ filledGaps
 
 timeStep :: Double            
-timeStep = 0.00001
+timeStep = 0.0000001
 
 initialMew =  0.1-- 0.000018
 
@@ -192,7 +192,7 @@ initialGridPre:: ValSet Double
 initialGridPre= 
     let vMap = foldl' (\prev next -> Map.insert next 
             (case next of 
-                U-> 0.5
+                U-> 50
                 V-> 0
                 W-> 0
                 Density -> 0.3 -- 1.2

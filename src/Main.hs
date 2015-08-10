@@ -30,14 +30,14 @@ defltOpts =
    Opts.key False $
    Opts.deflt
     
-plotDomain :: [[Double]]-> Frame.T ( Graph2D.T Int Int)
-plotDomain grid = 
+--plotDomain :: [[Double]]-> Frame.T ( Graph2D.T Int Int)
+plotDomain grid scale= 
     let xsize = length (head grid)-1 
         ysize = length  grid  -1
         printSize = (show $ ysize * 5)++","++(show $ xsize * 5)
     in Frame.cons 
             (   Opts.add ( Opt.custom "terminal pngcairo size" printSize) [printSize] $ 
-                Opts.add ( Opt.custom "logscale cb"  "") [] $
+                scale $
                 Opts.sizeRatio ((fromIntegral xsize)/(fromIntegral ysize)) $ 
                 defltOpts 
             ) $
@@ -45,7 +45,9 @@ plotDomain grid =
         (liftM2 (,)  [0..ysize] [0..xsize]) 
             $ \(x,y) -> (grid!!x)!!y
              
+plotDomainLog grid = plotDomain grid $ Opts.add ( Opt.custom "logscale cb"  "") []
 
+plotDomainLinear grid = plotDomain grid id
 ---}
 
 gasConstantR :: Double
@@ -255,8 +257,17 @@ runTimeSteps_Print =
             --{-
             mapM_
                 (\nextProp ->
-                    GP.plotAsync ( PNG.cons $ "c:\\temp\\"++ show nextProp ++ "\\"++show step ++".png") 
-                    $! plotDomain $! valSetToGrid prev timeLevel nextProp (1+maxPos Y) (quot (maxPos Z)  2)
+                    (
+                        GP.plotAsync ( PNG.cons $ "c:\\temp\\"++ show nextProp ++ "\\"++show step ++".png") 
+                        $! plotDomainLinear $! valSetToGrid prev timeLevel nextProp (1+maxPos Y) (quot (maxPos Z)  2)
+                    )
+                ) $ enumFrom Speed
+            mapM_
+                (\nextProp ->
+                    (
+                        GP.plotAsync ( PNG.cons $ "c:\\temp\\"++ show nextProp ++ " LOGSCALE" ++ "\\"++show step ++".png") 
+                        $! plotDomainLog $! valSetToGrid prev timeLevel nextProp (1+maxPos Y) (quot (maxPos Z)  2)
+                    )
                 ) $ enumFrom Speed
             ---}
             putStrLn $ show $ length (calculatedPositions prev)
