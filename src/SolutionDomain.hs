@@ -188,6 +188,12 @@ sutherlandConstant = 120
 sutherlandLambda = 
     initialMew *( initialTemperature + sutherlandConstant) / (initialTemperature**1.5)
 
+gasConstantR :: Double
+gasConstantR = specificHeatCp - specificHeatCv
+
+specificHeatCp :: Double
+specificHeatCp = 1005
+
 initialGridPre:: ValSet Double
 initialGridPre= 
     let vMap = foldl' (\prev next -> Map.insert next 
@@ -469,6 +475,9 @@ prop schemeType =
                 Mew -> 
                     let t = scheme Temperature pos side env 
                     in sutherlandLambda * (t**1.5)/ (t + sutherlandConstant)
+                Pressure ->
+                    gasConstantR * (scheme Temperature pos side env)
+                    * (scheme Density pos side env)
                 _-> scheme property pos side env  
 
 propDirectional property position side env =

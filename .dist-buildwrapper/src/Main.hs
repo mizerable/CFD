@@ -50,12 +50,6 @@ plotDomainLog grid = plotDomain grid $ Opts.add ( Opt.custom "logscale cb"  "") 
 plotDomainLinear grid = plotDomain grid id
 ---}
 
-gasConstantR :: Double
-gasConstantR = specificHeatCp - specificHeatCv
-
-specificHeatCp :: Double
-specificHeatCp = 1005
-
 heatConductivityK:: Double
 heatConductivityK = 0.025
 
@@ -177,16 +171,6 @@ energy =  do
                 ]
             )
             Temperature   
-
---gasLawPressure::Reader (ValSet Double) (Equation (Position-> [Term Double]))
-gasLawPressure = do
-    env <- ask
-    return $  
-        Equation
-            [ const [Unknown 1]]
-            [ \pos -> [ Constant $ gasConstantR * prop Directional Density pos Center  env 
-                * prop Directional Temperature pos Center env ] ]
-            Pressure          
     
 --getDiscEqInstance:: Equation (SchemeType -> Position -> [Term a]) -> SchemeType -> Position -> Equation (SchemeType ->Term a)
 getDiscEqInstance (Equation l r up) pos = Equation (concatMap (\t -> t pos) $! l) (concatMap (\t -> t pos) $! r) up
@@ -227,9 +211,7 @@ calcSteps = [
     ,(energy,  True, allPositionsCurrentTime )  
     ] 
 
-supportCalcSteps = [
-    (gasLawPressure, False , allPositionsCurrentTime  )
-    ]
+supportCalcSteps = []
 
 allPositionsCurrentTime env = 
     let curTimeLevel = timePos $ head $ calculatedPositions env
@@ -360,12 +342,6 @@ main =
     >>= (\_ -> putStrLn $ writeTerms ( lhs $ testEq energy ) initialGrid )
     >>= (\_ -> putStrLn " solving... ")
     >>= (\_ -> print $ solveUnknown (testEq energy) testPosition initialGrid )
-    >>= (\_ -> putStrLn " Pressure ------------ ")
-    >>= (\_ -> putStrLn $ writeTerms ( rhs $ testEq gasLawPressure ) initialGrid )
-    >>= (\_ -> putStrLn " = ")
-    >>= (\_ -> putStrLn $ writeTerms ( lhs $ testEq gasLawPressure ) initialGrid )
-    >>= (\_ -> putStrLn " solving... ")
-    >>= (\_ -> print $ solveUnknown (testEq gasLawPressure) testPosition initialGrid )
     -- >>= (\_ -> putStrLn $! stringDomain Pressure ( timePos $ offsetPosition (head $ calculatedPositions runTimeSteps) Prev) (1+maxPos X) runTimeSteps  )
     -- >>= (\_ -> putStrLn $! stringDomain Pressure (timePos $ head $ calculatedPositions runTimeSteps) (1+maxPos X) runTimeSteps  )
     -- >>= (\_ -> putStrLn $! stringDomain U ( timePos $ offsetPosition (head $ calculatedPositions runTimeSteps) Prev) (1+maxPos X) runTimeSteps  )
