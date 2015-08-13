@@ -32,7 +32,8 @@ data ValSet a = ValSet{
     calculatedPositions:: ![Position]
     ,vals:: !(Map.Map Position (Map.Map Property a))
     ,areaVal:: !(Map.Map Position (Map.Map Side a))
-    ,sideLen:: !(Map.Map Position (Map.Map Direction a)) }
+    ,sideLen:: !(Map.Map Position (Map.Map Direction a))
+    ,timeLevel :: Int }
 data Expression a = Expression{getTerms:: ![Term a]} 
 data Term a = 
     Constant {val:: !a}
@@ -177,7 +178,7 @@ obstacles =
         filled ++ filledGaps
 
 timeStep :: Double            
-timeStep = 0.0000001
+timeStep = 0.00001 --0.0000001
 
 initialMew =  0.1-- 0.000018
 
@@ -198,7 +199,7 @@ initialGridPre:: ValSet Double
 initialGridPre= 
     let vMap = foldl' (\prev next -> Map.insert next 
             (case next of 
-                U-> 50
+                U-> 100
                 V-> 0
                 W-> 0
                 Density -> 0.3 -- 1.2
@@ -218,7 +219,7 @@ initialGridPre=
         v = foldl' (\prev next -> Map.insert next vMap $! prev) Map.empty  $!  makeAllPositions
         av = foldl' (\prev next -> Map.insert next avMap $! prev) Map.empty $! makeAllPositions
         sl = foldl' (\prev next -> Map.insert next slMap $! prev) Map.empty $! makeAllPositions
-    in ValSet makeAllPositions v av sl 
+    in ValSet makeAllPositions v av sl 0 
     
 initialGrid = 
     let calcPos = removeItems (calculatedPositions initialGridPre) $! boundaryPositions
@@ -232,87 +233,29 @@ initialGrid =
                 prev
                 $ enumFrom U \\ enumFrom Density     
         )
-        (ValSet calcPos v av sl)
+        (ValSet calcPos v av sl 0)
          $! obstacles
-         
-upScaleGrid :: ValSet Double -> Int ->Direction -> ValSet Double
-upScaleGrid smallGrid scale direction = 
-    foldl'
-        (\vs nextPos ->
-            let newp =  upScalePosition nextPos scale direction
-                (ValSet p newv newav newsl ) = 
-                    (\env -> upScaleVals nextPos smallGrid env newp)
-                    .(\env -> upScaleAV nextPos smallGrid env newp direction $ fromIntegral scale)
-                    .(\env -> upScaleSL nextPos smallGrid env newp direction $ fromIntegral scale) 
-                         $ vs
-            in ValSet (newp ++ p) newv newav newsl -- tail because the first is duplicated    
-        ) emptyValSet
-        (calculatedPositions smallGrid)
-
-upScalePosition :: Position -> Int -> Direction -> [Position]
-upScalePosition (Position p d t) scale direction = 
-    let idx = getDirectionComponentIndex direction
-        anchor = p!!idx
-    in map (\x -> Position (setElem (anchor*scale + x) idx p) d t) [0.. scale-1]
-    
-upScaleVals:: Position -> ValSet Double -> ValSet Double -> [Position] -> ValSet Double   
-upScaleVals oldPos oldGrid vs newPoses = foldl'
-    (\prev1 nextProp ->
-        foldl'
-            (\prev2 nextPos -> setVal prev2 nextPos nextProp 
-                $ fromMaybe (error $ "couldn't get while upscaling " ++ show oldPos ++" "++ show nextProp)
-                    $ Map.lookup oldPos (vals oldGrid) >>= Map.lookup nextProp)
-            prev1
-            newPoses   
-    ) vs $ enumFrom U
-
-upScaleAV :: Position -> ValSet Double -> ValSet Double -> [Position] -> Direction -> Double-> ValSet Double  
-upScaleAV oldPos oldGrid vs newPoses direction scale= 
-    let (s1, s2) = boundaryPair direction
-    in foldl'
-        (\prev nextSide -> 
-            foldl'
-                (\prev2 nextPos ->
-                    let changeScale = if nextSide == s1 || nextSide == s2
-                            then 1 else scale -- for example, if i increase x resolution, then only east/west faces are unchanged
-                    in setFaceArea prev2 nextPos nextSide ( sideArea nextSide oldPos oldGrid / changeScale) 
-                ) prev newPoses
-        ) vs $ enumFrom East
-    
-upScaleSL :: Position ->  ValSet Double ->ValSet Double -> [Position] -> Direction -> Double ->ValSet Double
-upScaleSL oldPos oldGrid vs newPoses direction scale = 
-    foldl'
-        (\prev0 nextDir ->
-            foldl'
-                (\prev nextPos -> 
-                    let changeScale = if nextDir == direction then scale else 1
-                    in setCellLength prev nextPos nextDir $ sideLength nextDir oldPos oldGrid / changeScale
-                ) prev0 $ newPoses
-        ) vs $ enumFrom X
-    
-emptyValSet :: ValSet Double    
-emptyValSet = ValSet [] Map.empty Map.empty Map.empty
     
 setVal:: ValSet Double -> Position -> Property -> Double -> ValSet Double
-setVal (ValSet p v av sl) pos property newVal = 
+setVal (ValSet p v av sl tl) pos property newVal = 
     let subDict = case Map.lookup pos v  of
             Nothing -> Map.empty
             Just sb -> sb
-    in ValSet p (Map.insert pos (Map.insert property newVal subDict) v) av sl
+    in ValSet p (Map.insert pos (Map.insert property newVal subDict) v) av sl tl
 
 setFaceArea :: ValSet Double -> Position -> Side -> Double -> ValSet Double
-setFaceArea (ValSet p v av sl) pos side newVal = 
+setFaceArea (ValSet p v av sl tl) pos side newVal = 
     let subDict = case Map.lookup pos av  of
             Nothing -> Map.empty
             Just sb -> sb
-    in ValSet p v (Map.insert pos (Map.insert side newVal subDict) av) sl             
+    in ValSet p v (Map.insert pos (Map.insert side newVal subDict) av) sl tl             
     
 setCellLength :: ValSet Double -> Position -> Direction -> Double -> ValSet Double
-setCellLength (ValSet p v av sl) pos dir newVal = 
+setCellLength (ValSet p v av sl tl) pos dir newVal = 
     let subDict = case Map.lookup pos sl  of
             Nothing -> Map.empty
             Just sb -> sb
-    in ValSet p v av (Map.insert pos (Map.insert dir newVal subDict) sl)
+    in ValSet p v av (Map.insert pos (Map.insert dir newVal subDict) sl) tl
         
 cartProd:: [[a]] -> [[a]] -> [[a]]
 cartProd xs ys = [ x ++ y | x <- xs, y <- ys]

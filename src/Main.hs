@@ -185,13 +185,17 @@ applyDiffEq (eq, saveAtNextTime,getPos) env =
         (\pos -> 
             let discEquation = getDiscEqInstance (runReader eq env) pos 
                 solvedProperty = unknownProperty discEquation
-                newValue = solveUnknown discEquation pos env
+                newValuePredicted = solveUnknown discEquation pos env
+                (currValue:( prevValue:_)) = 
+                    map (\p -> prop Nondirectional solvedProperty p Center env)
+                        [pos, if timeLevel env > 1 then offsetPosition pos Prev else pos] 
+                newValue = currValue + (0.5 * ( newValuePredicted-prevValue))
             in ( pos, solvedProperty, newValue, saveAtNextTime)
         ) (getPos env)
   
 -- applyResults ::  [(Position, Property, a,Bool)]-> ValSet a -> ValSet a
 applyResults res pushTime vs = 
-    let (ValSet p v av sl) = foldl' 
+    let (ValSet p v av sl tl) = foldl' 
             (\prev (pos,property,newVal,saveAtNextTime)  ->
                 let newPos = if saveAtNextTime 
                         then advanceTime pos 
@@ -200,7 +204,7 @@ applyResults res pushTime vs =
             ) vs res
     in ValSet 
         (if pushTime then map advanceTime p else p) 
-        v av sl
+        v av sl (if pushTime then tl+1 else tl)
 
 -- calcSteps :: (Fractional a, RealFloat a)=>  [(Reader (ValSet a) (Equation (Position-> [Term a])) , Bool)]
 calcSteps = [ 
