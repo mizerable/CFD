@@ -177,7 +177,7 @@ obstacles =
         filled ++ filledGaps
 
 timeStep :: Double            
-timeStep = 0.00001 --0.0000001
+timeStep = 0.000003 --0.0000001
 
 initialMew =  0.1-- 0.000018
 

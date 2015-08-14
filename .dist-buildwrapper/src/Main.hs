@@ -219,7 +219,7 @@ allPositionsCurrentTime env =
     let curTimeLevel = timePos $ head $ calculatedPositions env
     in map (\x-> modifyPositionComponent x Time curTimeLevel ) makeAllPositions 
 
-runSingleStep prev _ = 
+runSingleStep prev rerun = 
     let runSteps steps vs= concat $!
             --runPar $ parMap
             map 
@@ -229,12 +229,12 @@ runSingleStep prev _ =
         (\vs (nextSteps,pushTime) ->  applyResults (runSteps nextSteps vs) pushTime vs)
         prev
         -- this third element in this below is a waste every time EXCEPT the last time step.
-        [(supportCalcSteps,False),(calcSteps,True),(supportCalcSteps,False)] 
+        $ map (\(x,r) -> (x,r && rerun) ) [(supportCalcSteps,False),(calcSteps,True),(supportCalcSteps,False)] 
 
 runTimeSteps_Print =
     foldM_
         (\prev step -> 
-            let next = runSingleStep prev ()
+            let next = foldl' (\lastState _ -> runSingleStep lastState False) (runSingleStep prev True) [1..10]
                 timeLevel = timePos $ head $ calculatedPositions next -- the first element of the list of calculated positions will give the current time slot
                 backOneTimeLevel = pushBackTime timeLevel 
             in do 
