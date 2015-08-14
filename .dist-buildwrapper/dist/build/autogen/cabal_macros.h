@@ -56,10 +56,10 @@
   (major1) == 0 && (major2) <  0 || \
   (major1) == 0 && (major2) == 0 && (minor) <= 4)
 
-/* package unordered-containers-0.2.4.0 */
-#define VERSION_unordered_containers "0.2.4.0"
+/* package unordered-containers-0.2.5.1 */
+#define VERSION_unordered_containers "0.2.5.1"
 #define MIN_VERSION_unordered_containers(major1,major2,minor) (\
   (major1) <  0 || \
   (major1) == 0 && (major2) <  2 || \
-  (major1) == 0 && (major2) == 2 && (minor) <= 4)
+  (major1) == 0 && (major2) == 2 && (minor) <= 5)
 

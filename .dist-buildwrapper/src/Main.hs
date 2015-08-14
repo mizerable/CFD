@@ -6,7 +6,6 @@ import Data.Maybe
 
 import SolutionDomain
 import CalculusUtils
-import GeometryStuff
 import Data.List
 import Control.Monad.Reader as Reader
 
@@ -174,10 +173,7 @@ energy =  do
     
 --getDiscEqInstance:: Equation (SchemeType -> Position -> [Term a]) -> SchemeType -> Position -> Equation (SchemeType ->Term a)
 getDiscEqInstance (Equation l r up) pos = Equation (concatMap (\t -> t pos) $! l) (concatMap (\t -> t pos) $! r) up
-    
-advanceTime :: Position -> Position
-advanceTime (Position p d t ) = Position p d $! mod (t+1) storedSteps     
-    
+
 --applyDiffEq :: (Fractional a, NFData a)=> ValSet a -> Equation (Position -> [Term a]) -> Bool-> [ (Position,Property,a,Bool)]    
 applyDiffEq (eq, saveAtNextTime,getPos) env =
     runPar $ parMap
@@ -192,11 +188,17 @@ applyDiffEq (eq, saveAtNextTime,getPos) env =
 -- applyResults ::  [(Position, Property, a,Bool)]-> ValSet a -> ValSet a
 applyResults res pushTime vs = 
     let (ValSet p v av sl tl) = foldl' 
-            (\prev (pos,property,newVal,saveAtNextTime)  ->
+            (\prevEnv (pos,property,newVal,saveAtNextTime)  ->
                 let newPos = if saveAtNextTime 
                         then advanceTime pos 
                         else pos
-                in setVal prev newPos property newVal 
+                    newValAdded = setVal prevEnv newPos property newVal -- really the intermediate value has been added, wil be corrected next time step
+                in if timeLevelAbsolute newValAdded > 0 
+                    then 
+                        let prevVal = prop Nondirectional property (offsetPosition pos Prev) Center newValAdded
+                            correctedCurrVal = prevVal + 0.5 * ( newVal - prevVal) 
+                        in setVal newValAdded pos property correctedCurrVal
+                    else newValAdded -- there are not enough time steps yet to do Heun's Method
             ) vs res
     in ValSet 
         (if pushTime then map advanceTime p else p) 
@@ -232,28 +234,33 @@ runSingleStep prev _ =
 runTimeSteps_Print =
     foldM_
         (\prev step -> 
-            let next = runSingleStep prev () 
-            in do
-                let timeLevel = timePos $ head $ calculatedPositions next
+            let next = runSingleStep prev ()
+                timeLevel = timePos $ head $ calculatedPositions next -- the first element of the list of calculated positions will give the current time slot
+                backOneTimeLevel = pushBackTime timeLevel 
+            in do 
                 --{-
+                -- use the most recent valset but one time step BACK because that will have been corrected. the most recent time level is NOT YET CORRECTED. it has JUST BEEN CALCULATED AND IS INTERMEDIATE
                 mapM_
                     (\nextProp ->
                         (
                             GP.plotAsync ( PNG.cons $ "c:\\temp\\"++ show nextProp ++ "\\"++show step ++".png") 
-                            $! plotDomainLinear $! valSetToGrid next timeLevel nextProp (1+maxPos Y) (quot (maxPos Z)  2)
+                            $! plotDomainLinear $! valSetToGrid next backOneTimeLevel nextProp (1+maxPos Y) (quot (maxPos Z)  2)
                         )
                     ) $ enumFrom Speed
                 mapM_
                     (\nextProp ->
                         (
                             GP.plotAsync ( PNG.cons $ "c:\\temp\\"++ show nextProp ++ " LOGSCALE" ++ "\\"++show step ++".png") 
-                            $! plotDomainLog $! valSetToGrid next timeLevel nextProp (1+maxPos Y) (quot (maxPos Z)  2)
+                            $! plotDomainLog $! valSetToGrid next backOneTimeLevel nextProp (1+maxPos Y) (quot (maxPos Z)  2)
                         )
                     ) $ enumFrom Speed
                 ---}
                 putStrLn $ show $ length (calculatedPositions next)
+                putStrLn $ show $ Map.size (vals next)
                 putStrLn $ "step: " ++ show step 
                 putStrLn $ "timeLevel: " ++ show timeLevel
+                putStrLn $ "timeLevelAbsolute: " ++ (show $ timeLevelAbsolute next)
+                putStrLn " "
                 --putStrLn $ stringDomain U timeLevel (1 + maxPos Y) prev (quot (maxPos Z)  2)
                 return next
         )

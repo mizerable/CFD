@@ -6,7 +6,6 @@ import qualified Data.Set as Set
 import Control.Monad
 import Data.Maybe
 import Data.List
-import GeometryStuff
 import System.Random.Shuffle
 import System.Random
 
@@ -33,7 +32,7 @@ data ValSet a = ValSet{
     ,vals:: !(Map.Map Position (Map.Map Property a))
     ,areaVal:: !(Map.Map Position (Map.Map Side a))
     ,sideLen:: !(Map.Map Position (Map.Map Direction a))
-    ,timeLevel :: Int }
+    ,timeLevelAbsolute :: Int }
 data Expression a = Expression{getTerms:: ![Term a]} 
 data Term a = 
     Constant {val:: !a}
@@ -41,8 +40,8 @@ data Term a =
     | SubExpression {expression:: !(Expression a) }  
     | Derivative { denom:: !Direction ,function:: !(SchemeType -> Position->Side->Term a), centered:: !Side, 
         multiplier:: !(SchemeType->Position->Side-> a) } 
-        
-instance Functor Term  where
+
+instance Functor Term where
     fmap f x = case x of
          Constant c -> Constant $ f c
          Unknown u -> Unknown $ f u
@@ -303,12 +302,19 @@ directionFromCenter side = case side of
     Now -> Time
     Prev -> Time
     Center -> error "there is no direction from center" 
+
+pushBackTime t = mod (t - 1) storedSteps
+
+pushUpTime t = mod (t+1) storedSteps    
     
+advanceTime :: Position -> Position
+advanceTime (Position p d t ) = Position p d $! pushUpTime t      
+        
 offsetPosition:: Position->Side ->Position
 offsetPosition (Position p d t) side = case side of
     Center -> Position p d t 
     Now -> Position p d t 
-    Prev -> Position p d $! mod (t - 1) storedSteps  
+    Prev -> Position p d $! pushBackTime t   
     _ -> 
         let position = Position p d t
             maxOrMin = if isUpperSide side then min else max

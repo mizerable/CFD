@@ -12,8 +12,7 @@ executable CFD
   other-modules:   
                    Main,
                    SolutionDomain,
-                   CalculusUtils,
-                   GeometryStuff
+                   CalculusUtils
 
 library 
   build-depends:   
@@ -29,6 +28,5 @@ library
   ghc-options:     -Wall
   other-modules:   
                    SolutionDomain,
-                   CalculusUtils,
-                   GeometryStuff
+                   CalculusUtils
 
