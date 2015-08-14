@@ -1,8 +1,7 @@
+{-# LANGUAGE ScopedTypeVariables, RankNTypes , KindSignatures , FlexibleContexts #-}
 module CalculusUtils where
 
 import SolutionDomain
-import Data.Maybe
-import qualified Data.Map.Strict as Map
 import Control.Monad.Reader as Reader
 import Data.List
          
@@ -38,8 +37,7 @@ solveUnknown (Equation l r _) position vs=
             _ -> 0
         sumConstants p n =  p + case n of
             Constant c-> c
-            Derivative {}-> sumExpression sumConstants $!
-                [approximateDerivative n position vs]  
+            Derivative {}-> sumExpression sumConstants [approximateDerivative n position vs]  
             SubExpression s -> sumExpression sumConstants $! getTerms s
             _ -> 0
         sumExpression s = foldl' s 0
@@ -86,7 +84,10 @@ integSurface f position direction unknownProp= do
                         else fmap (* sideAreaVal) term
         in [value s1 True , value s2 False]       
        
---integSingleTerm::  (Num a, Fractional a, RealFloat a ) =>  Term a -> DimensionType -> Position -> Property ->Reader (ValSet a) [Term a]
+integSingleTerm :: forall (m :: * -> *).
+                         MonadReader (ValSet Double) m =>
+                         Term Double
+                         -> DimensionType -> Position -> Property -> m [Term Double]
 integSingleTerm term dimetype cellposition unknownProp=  do
     vs <- ask
     return $
@@ -102,7 +103,6 @@ integSingleTerm term dimetype cellposition unknownProp=  do
                 else nonDerivAnswer
             _ -> nonDerivAnswer    
 
---integ::  (Num a, Fractional a, RealFloat a ) => ValSet a-> DimensionType -> [Term a] ->Position ->Reader Property [Term a]
 integ vs dimetype terms cellposition = do
     unknownProp <- ask
     return $ case terms of
@@ -118,6 +118,13 @@ d_ properties = df_ properties 1
 df_ :: [Property]-> Double ->Direction -> Reader (ValSet Double) (Term Double)      
 df_ properties factor = dfm_ properties factor (\_ _ _ -> 1)         
 
+dfm_ :: forall (m :: * -> *).
+          MonadReader (ValSet Double) m =>
+          [Property]
+          -> Double
+          -> (SchemeType -> Position -> Side -> Double)
+          -> Direction
+          -> m (Term Double)
 dfm_ properties factor multF direction = do
     d<-ask 
     return $ Derivative direction 
@@ -190,24 +197,36 @@ dmeww_dy = d_ [Mew,W] Y
 --dmeww_dz:: (Fractional a) => Reader (ValSet a) (Term a)
 dmeww_dz = d_ [Mew,W] Z
 
---divergence:: (Num a, Fractional a) => [Reader (ValSet a) (Term a)] -> [Reader (ValSet a) (Term a)]
+divergence :: forall (m :: * -> *) a r.
+                    (MonadReader r m, Num a) =>
+                    [Reader r (Term a)] -> [m (Term a)]
 divergence vector = map ( uncurry dd_) $! zip vector (enumFrom X)  
     
--- gradient:: (Num a, Fractional a) => [Property] -> a-> [Reader (ValSet a) (Term a)]
+gradient :: [Property] -> Double -> [Reader (ValSet Double) (Term Double)]
 gradient properties constantFactor = map (df_ properties constantFactor) $! enumFrom X  
 
+integrateTerms :: forall (m :: * -> *) t r.
+                    Monad m =>
+                    (DimensionType -> [t] -> m [t]) -> r -> [Reader r t] -> [m [t]]
 integrateTerms integrate env =map (\term -> integrateOrder integrate Spatial Temporal [runReader term env] )  
 
+divergenceWithProps :: [Property]-> [Reader (ValSet Double) (Term Double)]
 divergenceWithProps properties = divergenceWithPropsFactor properties 1  
 
+divergenceWithPropsFactor :: [Property] -> Double -> [Reader (ValSet Double) (Term Double)]
 divergenceWithPropsFactor properties constantFactor = 
     map (\x -> df_ (properties++[d2C x]) constantFactor x ) (enumFrom X)
  
+divGrad :: forall (m :: * -> *).
+                 MonadReader (ValSet Double) m =>
+                 [Property] -> Double -> [m (Term Double)]
 divGrad properties constantFactor = divergence $ gradient properties constantFactor  
 
+integrateOrder :: forall (m :: * -> *) b t.
+                        Monad m =>
+                        (t -> b -> m b) -> t -> t -> b -> m b
 integrateOrder integrate i1 i2 term = integrate i1 term >>= integrate i2
         
---multProps ::(Num a, Fractional a)=> [Property] ->SchemeType ->Position ->Side -> Reader (ValSet a) a
 multProps props schemeType= 
     let func = prop schemeType
     in foldl' 
@@ -217,14 +236,19 @@ multProps props schemeType=
                 return $ runReader (prev pos side) vs *  func next pos side vs)          
         (\_ _ -> return 1)
         props  
-                
--- squareDerivative:: (Num a, Fractional a) => [Property] -> a->Direction -> [Reader (ValSet a) (Term a)]        
+      
+squareDerivative :: forall (m :: * -> *).
+                          MonadReader (ValSet Double) m =>
+                          [Property] -> Double -> Direction -> [m (Term Double)]
 squareDerivative properties constantFactor direction = 
     let foldedProps = multProps properties
     in [ ddf_ (d_ (properties++properties) direction) (constantFactor/2) direction
         ,ddfm_ (d_ properties direction) (constantFactor * (-1)) foldedProps direction] 
 
---pairedMultipliedDerivatives :: (Num a, Fractional a) =>  [Property] -> [Property] -> Direction -> Direction -> [Reader (ValSet a) (Term a)]
+pairedMultipliedDerivatives :: forall (m :: * -> *).
+                                     MonadReader (ValSet Double) m =>
+                                     [Property]
+                                     -> [Property] -> Direction -> Direction -> [m (Term Double)]
 pairedMultipliedDerivatives props1 props2 dir1 dir2 = 
     let p1 = multProps props1 
         p2 = multProps props2
@@ -232,6 +256,12 @@ pairedMultipliedDerivatives props1 props2 dir1 dir2 =
         ddfm_ (d_ props1 dir1) (-1) p2 dir2,
         ddfm_ (d_ props2 dir1) (-1) p1 dir2]
 
+integUnknown :: ValSet Double
+                  -> Property
+                  -> DimensionType
+                  -> [Term Double]
+                  -> Position
+                  -> [Term Double]
 integUnknown env unknownProp dimetype terms cellposition = 
     runReader (integ env dimetype terms cellposition)unknownProp
 

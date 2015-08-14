@@ -1,8 +1,7 @@
-
+{-# LANGUAGE ScopedTypeVariables, RankNTypes #-}
 module Main where
 
 import qualified Data.Map.Strict as Map 
-import Data.Maybe
 
 import SolutionDomain
 import CalculusUtils
@@ -25,20 +24,16 @@ instance Par.NFData Position
 
  
 defltOpts :: Graph.C graph => Opts.T graph
-defltOpts =
-   Opts.key False $
-   Opts.deflt
+defltOpts = Opts.key False Opts.deflt
     
---plotDomain :: [[Double]]-> Frame.T ( Graph2D.T Int Int)
 plotDomain grid scale= 
     let xsize = length (head grid)-1 
         ysize = length  grid  -1
-        printSize = (show $ ysize * 5)++","++(show $ xsize * 5)
+        printSize = show (ysize * 5) ++ "," ++ show (xsize * 5)
     in Frame.cons 
             (   Opts.add ( Opt.custom "terminal pngcairo size" printSize) [printSize] $ 
                 scale $
-                Opts.sizeRatio ((fromIntegral xsize)/(fromIntegral ysize)) $ 
-                defltOpts 
+                Opts.sizeRatio (fromIntegral xsize / fromIntegral ysize)  defltOpts 
             ) $
         Plot2D.function Graph2D.image 
         (liftM2 (,)  [0..ysize] [0..xsize]) 
@@ -171,10 +166,9 @@ energy =  do
             )
             Temperature   
     
---getDiscEqInstance:: Equation (SchemeType -> Position -> [Term a]) -> SchemeType -> Position -> Equation (SchemeType ->Term a)
+getDiscEqInstance :: forall a t.Equation (t -> [a]) -> t -> Equation a
 getDiscEqInstance (Equation l r up) pos = Equation (concatMap (\t -> t pos) $! l) (concatMap (\t -> t pos) $! r) up
 
---applyDiffEq :: (Fractional a, NFData a)=> ValSet a -> Equation (Position -> [Term a]) -> Bool-> [ (Position,Property,a,Bool)]    
 applyDiffEq (eq, saveAtNextTime,getPos) env =
     runPar $ parMap
     --map
@@ -185,7 +179,8 @@ applyDiffEq (eq, saveAtNextTime,getPos) env =
             in ( pos, solvedProperty, newValue, saveAtNextTime)
         ) (getPos env)
   
--- applyResults ::  [(Position, Property, a,Bool)]-> ValSet a -> ValSet a
+
+applyResults :: [(Position, Property, Double, Bool)] -> Bool -> ValSet Double -> ValSet Double
 applyResults res pushTime vs = 
     let (ValSet p v av sl tl) = foldl' 
             (\prevEnv (pos,property,newVal,saveAtNextTime)  ->
@@ -204,7 +199,6 @@ applyResults res pushTime vs =
         (if pushTime then map advanceTime p else p) 
         v av sl (if pushTime then tl+1 else tl)
 
--- calcSteps :: (Fractional a, RealFloat a)=>  [(Reader (ValSet a) (Equation (Position-> [Term a])) , Bool)]
 calcSteps = [ 
     (continuity, True, allPositionsCurrentTime )
     ,(uMomentum, True, calculatedPositions )
@@ -215,6 +209,7 @@ calcSteps = [
 
 supportCalcSteps = []
 
+allPositionsCurrentTime :: forall a. ValSet a -> [Position]
 allPositionsCurrentTime env = 
     let curTimeLevel = timePos $ head $ calculatedPositions env
     in map (\x-> modifyPositionComponent x Time curTimeLevel ) makeAllPositions 
@@ -222,9 +217,7 @@ allPositionsCurrentTime env =
 runSingleStep prev rerun = 
     let runSteps steps vs= concat $!
             --runPar $ parMap
-            map 
-                (\step-> applyDiffEq step vs ) 
-                steps  
+            map (`applyDiffEq` vs ) steps  
     in foldl'
         (\vs (nextSteps,pushTime) ->  applyResults (runSteps nextSteps vs) pushTime vs)
         prev
@@ -242,24 +235,20 @@ runTimeSteps_Print =
                 -- use the most recent valset but one time step BACK because that will have been corrected. the most recent time level is NOT YET CORRECTED. it has JUST BEEN CALCULATED AND IS INTERMEDIATE
                 mapM_
                     (\nextProp ->
-                        (
-                            GP.plotAsync ( PNG.cons $ "c:\\temp\\"++ show nextProp ++ "\\"++show step ++".png") 
-                            $! plotDomainLinear $! valSetToGrid next backOneTimeLevel nextProp (1+maxPos Y) (quot (maxPos Z)  2)
-                        )
+                        GP.plotAsync ( PNG.cons $ "c:\\temp\\"++ show nextProp ++ "\\"++show step ++".png") 
+                        $! plotDomainLinear $! valSetToGrid next backOneTimeLevel nextProp (1+maxPos Y) (quot (maxPos Z)  2)
                     ) $ enumFrom Speed
                 mapM_
                     (\nextProp ->
-                        (
-                            GP.plotAsync ( PNG.cons $ "c:\\temp\\"++ show nextProp ++ " LOGSCALE" ++ "\\"++show step ++".png") 
-                            $! plotDomainLog $! valSetToGrid next backOneTimeLevel nextProp (1+maxPos Y) (quot (maxPos Z)  2)
-                        )
+                        GP.plotAsync ( PNG.cons $ "c:\\temp\\"++ show nextProp ++ " LOGSCALE" ++ "\\"++show step ++".png") 
+                        $! plotDomainLog $! valSetToGrid next backOneTimeLevel nextProp (1+maxPos Y) (quot (maxPos Z)  2)
                     ) $ enumFrom Speed
                 ---}
                 putStrLn $ show $ length (calculatedPositions next)
                 putStrLn $ show $ Map.size (vals next)
                 putStrLn $ "step: " ++ show step 
                 putStrLn $ "timeLevel: " ++ show timeLevel
-                putStrLn $ "timeLevelAbsolute: " ++ (show $ timeLevelAbsolute next)
+                putStrLn $ "timeLevelAbsolute: " ++ show (timeLevelAbsolute next)
                 putStrLn " "
                 --putStrLn $ stringDomain U timeLevel (1 + maxPos Y) prev (quot (maxPos Z)  2)
                 return next
@@ -269,7 +258,7 @@ runTimeSteps_Print =
  
 testTerms = [Unknown 2.4, Constant 1.2, Constant 3.112, Unknown (-0.21),  SubExpression (Expression [Constant 2, Constant 2, SubExpression (Expression [Unknown 0.33333])])]
 
---testEq:: (Num a, Fractional a)=> Reader (ValSet a ) (Equation (Position ->[Term a])) -> Equation (Term a)
+testEq :: forall a.Reader (ValSet Double) (Equation (Position -> [a])) -> Equation a
 testEq eq = getDiscEqInstance ( runReader eq $! initialGrid) testPosition 
             
 --writeTermsOrig:: (Num a, Show a, Fractional a)=> [Term a] -> String

@@ -95,23 +95,27 @@ gridSize d = case d of
     Z -> 1
     Time -> error "gridsize for time is the timestep"
 
-cellLength d = gridSize d / (fromIntegral $ maxPos d + 1)
+cellLength :: Direction -> Double
+cellLength d = gridSize d / fromIntegral (maxPos d + 1)
 
+getDirectionComponentIndex :: forall a. Num a => Direction -> a
 getDirectionComponentIndex direction = case direction of
     X -> 0
     Y -> 1
     Z -> 2
     _ -> error "not defined or not added dimension"
 
+coordToPos :: [Double] -> Int -> Position
 coordToPos coords time = 
     let dirs = enumFrom X
     in Position 
-        (map (\x-> round $ coords!!x / (cellLength $ dirs!!x)  ) $ [0.. length coords -1] )
+        (map (\ x -> round $ coords !! x / cellLength (dirs !! x))  [0 .. length coords - 1] )
         (length dirs)
         time
 
+posToCoord :: Position -> Direction -> Double
 posToCoord (Position s _ _ ) direction = 
-    cellLength direction * (fromIntegral $ s!!(getDirectionComponentIndex direction)) 
+    cellLength direction *  fromIntegral (s !! getDirectionComponentIndex direction) 
 
 boundaryPair:: Direction -> (Side,Side)
 boundaryPair d = case d of 
@@ -149,9 +153,11 @@ obstaclesSet = Set.fromList $! obstacles
 obstacle :: Position
 obstacle = coordToPos [gridSize X / 4 , gridSize Y / 2 , 0 ] 0
 
-obstacle2 = Position [(quot (maxPos X)  4 ),  (quot (maxPos Y) 2 )+ 5, 0] 3 0
+obstacle2 :: Position
+obstacle2 = Position [quot (maxPos X) 4, quot (maxPos Y) 2 + 5, 0] 3 0
 
-obstacle3 = Position [(quot (maxPos X)  4 ),  (quot (maxPos Y) 2 )+ 2, 0] 3 0
+obstacle3 :: Position
+obstacle3 = Position [quot (maxPos X) 4, quot (maxPos Y) 2 + 2, 0] 3 0
 
 squareBoundsPts :: [Position]
 squareBoundsPts = [
@@ -166,25 +172,29 @@ squareBoundsPts = [
     ] 
 
 squareBounds :: [Position] 
-squareBounds = connectBounds makeAllPositions squareBoundsPts
+squareBounds = connectBounds squareBoundsPts
 
 obstacles :: [Position]
 obstacles = 
-    let filled =  fillObInterior (Set.fromList squareBounds) $! [offsetPosition obstacle East]
+    let filled =  fillObInterior (Set.fromList squareBounds)  [offsetPosition obstacle East]
         filledGaps = fillEnclosedGaps makeAllPositions $ Set.fromList filled
     in  -- squareBoundsPts
         --squareBounds
         filled ++ filledGaps
 
 timeStep :: Double            
-timeStep = 0.000003 --0.0000001
+timeStep = 0.00001 --0.0000001
 
+initialMew :: Double
 initialMew =  0.1-- 0.000018
 
+initialTemperature :: Double
 initialTemperature = 223
 
+sutherlandConstant :: Double
 sutherlandConstant = 120
 
+sutherlandLambda :: Double
 sutherlandLambda = 
     initialMew *( initialTemperature + sutherlandConstant) / (initialTemperature**1.5)
 
@@ -196,8 +206,8 @@ specificHeatCp = 1005
 
 initialGridPre:: ValSet Double
 initialGridPre= 
-    let vMap = foldl' (\prev next -> Map.insert next 
-            (case next of 
+    let vMap = foldl' (\prev nxt -> Map.insert nxt 
+            (case nxt of 
                 U-> 100
                 V-> 0
                 W-> 0
@@ -207,17 +217,17 @@ initialGridPre=
                 Temperature -> initialTemperature
             ) 
             prev) Map.empty (enumFrom U)
-        avMap = foldl' (\prev next ->
-                    Map.insert next (
-                        foldl' (\prev2 next2 -> prev2 * (fromJust $ Map.lookup next2 slMap) ) 1 $ faceToDirections next 
+        avMap = foldl' (\prev nxt ->
+                    Map.insert nxt (
+                        foldl' (\prev2 next2 -> prev2 * fromJust (Map.lookup next2 slMap) ) 1 $ faceToDirections nxt 
                     ) $! prev
                 ) Map.empty $!  enumFrom East
-        slMap = foldl' (\prev next -> 
-                    Map.insert next (cellLength next ) $! prev
+        slMap = foldl' (\prev nxt -> 
+                    Map.insert nxt (cellLength nxt ) $! prev
                 ) Map.empty $! enumFrom X
-        v = foldl' (\prev next -> Map.insert next vMap $! prev) Map.empty  $!  makeAllPositions
-        av = foldl' (\prev next -> Map.insert next avMap $! prev) Map.empty $! makeAllPositions
-        sl = foldl' (\prev next -> Map.insert next slMap $! prev) Map.empty $! makeAllPositions
+        v = foldl' (\prev nxt -> Map.insert nxt vMap $! prev) Map.empty  $!  makeAllPositions
+        av = foldl' (\prev nxt -> Map.insert nxt avMap $! prev) Map.empty $! makeAllPositions
+        sl = foldl' (\prev nxt -> Map.insert nxt slMap $! prev) Map.empty $! makeAllPositions
     in ValSet makeAllPositions v av sl 0 
     
 initialGrid = 
@@ -303,8 +313,10 @@ directionFromCenter side = case side of
     Prev -> Time
     Center -> error "there is no direction from center" 
 
+pushBackTime :: Int -> Int
 pushBackTime t = mod (t - 1) storedSteps
 
+pushUpTime :: Int -> Int
 pushUpTime t = mod (t+1) storedSteps    
     
 advanceTime :: Position -> Position
@@ -327,9 +339,9 @@ offsetPosition (Position p d t) side = case side of
             $ maxOrMin boundary $ getPositionComponent position direction + offsetAmount   
 
 getPositionComponent:: Position -> Direction -> Int
-getPositionComponent (Position p d t) direction = case direction of 
+getPositionComponent (Position p _ t) direction = case direction of 
     Time -> t
-    _ -> p!!(getDirectionComponentIndex direction)
+    _ -> p !! getDirectionComponentIndex direction
 
 average::(Num a, Fractional a) => [a]->a
 average terms =
@@ -337,18 +349,23 @@ average terms =
         f p n= p + n / len
     in foldl' f 0 terms
 
-isBoundaryPosition (Position p d t) = Set.member (Position p d 0) boundaryPositionsSet
+isBoundaryPosition :: Position -> Bool
+isBoundaryPosition (Position p d _) = Set.member (Position p d 0) boundaryPositionsSet
 
-isObstaclePosition (Position p d t) = Set.member (Position p d 0) obstaclesSet 
+isObstaclePosition :: Position -> Bool
+isObstaclePosition (Position p d _) = Set.member (Position p d 0) obstaclesSet 
 
+positionIfWall :: Position -> Position
 positionIfWall (Position p d t) = if isBoundaryPosition (Position p d t) 
     then Position p d 0
     else Position p d t
     
+envIfWall :: Position -> ValSet Double -> ValSet Double
 envIfWall (Position p d _) env = if isBoundaryPosition (Position p d 0) 
-    then id $! initialGrid
+    then initialGrid
     else env       
 
+pecletNumber :: Position -> Side -> ValSet Double -> Double
 pecletNumber position side env = 
     let direc = directionFromCenter side
         momentum = propCentralDiff (convectionFromDirection direc) position side env  
@@ -357,7 +374,7 @@ pecletNumber position side env =
         l = sideLength direc position env 
     in (density * momentum * l) / viscosity 
 
---approximateDerivative::(Num a, Fractional a)=>  Term a -> Position-> ValSet a -> Term a
+approximateDerivative :: Term Double -> Position -> ValSet Double -> Term Double
 approximateDerivative deriv position vs= case deriv of 
     (Derivative direction func side m) ->
         if directionFromCenter side == direction 
@@ -394,20 +411,22 @@ approximateDerivative deriv position vs= case deriv of
                 _ -> error "can't approx >1 order derivs. deriv must produce constants"
     _ -> error "can't approx something that isn't a deriv"
 
+magnitude :: forall s. Floating s => [s] -> s
 magnitude v = sqrt $ foldl' (\prev nVal ->prev + (nVal*nVal)) 0.0 v
 
+prop :: SchemeType -> Property -> Position -> Side -> ValSet Double -> Double
 prop schemeType =
-    let f scheme = (\property pos side env ->
-            if side == Center || side == Now || side == Prev
-            then propCentralDiff property pos side env 
-            else scheme property pos side env) 
+    let f scheme property pos side env  = 
+            if side == Center || side == Now || side == Prev 
+                then propCentralDiff property pos side env 
+                else scheme property pos side env 
     in 
         let scheme = case schemeType of
                 Directional -> f propLimitedSlope
                 Nondirectional -> f propLimitedSlope
             momentums = enumFrom U \\ enumFrom Density
         in \property pos side env-> case property of
-                Speed-> magnitude $ map (\next -> scheme next pos side env) momentums   
+                Speed-> magnitude $ map (\nxt -> scheme nxt pos side env) momentums   
                 Vorticity -> 
                     let pairs = [(x,y) | x <- momentums , y <- tail $ dropWhile (/= x) momentums ]
                         vortComponents = map (\(a,b) ->
@@ -417,30 +436,27 @@ prop schemeType =
                                             (\_ _ _ -> 1) 
                                     deriv1 = makeDeriv a b
                                     deriv2 = makeDeriv b a
-                                in (val $ approximateDerivative deriv1 pos env)
-                                    - (val $ approximateDerivative deriv2 pos env)    
+                                in val (approximateDerivative deriv1 pos env) -
+                                    val (approximateDerivative deriv2 pos env)    
                             ) pairs
                     in magnitude vortComponents 
                 Mew -> 
                     let t = scheme Temperature pos side env 
                     in sutherlandLambda * (t**1.5)/ (t + sutherlandConstant)
                 Pressure ->
-                    gasConstantR * (scheme Temperature pos side env)
-                    * (scheme Density pos side env)
+                    gasConstantR * scheme Temperature pos side env *
+                        scheme Density pos side env
                 _-> scheme property pos side env  
 
 propDirectional property position side env =
     let neighbor = offsetPosition position side
         decide =
             let peclet = pecletNumber position side env  
-            in if peclet == 0
-                then propCentralDiff
-                else 
-                    if abs peclet < 0.99
-                    then propCentralDiff
-                    else if abs peclet > 2.6
-                        then propUpwindDiff peclet  
-                        else propQUICK peclet 
+            in (if (peclet == 0) || (abs peclet < 0.99) 
+                then propCentralDiff 
+                else(if abs peclet > 2.6 
+                        then propUpwindDiff peclet 
+                        else propQUICK peclet)) 
     in case (isObstaclePosition neighbor || isObstaclePosition position
                 , isMomentum property 
                 ,elem side ( enumFrom East \\ enumFrom Center )
@@ -485,7 +501,7 @@ propUpwindDiff pec property position side env =
 propLimitedSlope property position side env = 
     let valCenter = propCentralDiff property position Center env
         d = directionFromCenter side
-        interval = sideLength d position env
+        -- interval = sideLength d position env
         (upper, lower) = boundaryPair d
         upperNVal:(lowerNVal:_)  
             = map (\s -> propCentralDiff property (offsetPosition position s) Center env) 
@@ -499,15 +515,14 @@ propLimitedSlope property position side env =
     in (if isUpperSide side then (+) else (-)) valCenter  
             $ 0.5 * ave   
 
---prop::(Num a, Fractional a)=> Property->Position->Side-> Reader (ValSet a) a
+propCentralDiff :: Property -> Position -> Side -> ValSet Double -> Double
 propCentralDiff property position side env = 
     let neighbor = offsetPosition position side
         noValError = error ("no value "
                             ++ 
-                            (
-                                foldl' (\prev next -> prev ++ " " ++  (show $ (spatialPos position)!!next )) "" 
+                                foldl' (\prev nxt -> prev ++ " " ++ show (spatialPos position !! nxt)) "" 
                                     [0..spatialDimens position-1] 
-                            )++ " "
+                            ++ " "
                             ++ show (timePos position)++ " "
                             ++ show property ++ " "
                             ++ show side)
@@ -547,14 +562,15 @@ distanceSquared (Position sp1 _ _) (Position sp2 _ _) =
 distance:: Position -> Position -> Double    
 distance p1 p2 = sqrt $ distanceSquared p1 p2 
         
+isBetween :: Position-> Position -> Position -> ValSet Double -> Bool
 isBetween p1 p2 testPt vs= 
     let aSq = distanceSquared p1 testPt
         bSq = distanceSquared p2 testPt
         cSq = distanceSquared p1 p2
         x = sqrt $ (aSq + bSq - cSq ) / 2
         cornerDist = sqrt $ 
-            foldl' (\prev next ->
-                    let sl = sideLength next testPt vs
+            foldl' (\prev nxt ->
+                    let sl = sideLength nxt testPt vs
                     in prev + (sl*sl) 
                 ) 0 (enumFrom X)
     in cornerDist > x
@@ -562,16 +578,21 @@ isBetween p1 p2 testPt vs=
         
 connectTwo p1 p2 allPos vs = filter (isBetween p1 p2 vs) allPos
 
+getNeighborsCorners :: Position -> [Position]
 getNeighborsCorners position =
-    let cross = filter (\(a,b) -> a /= b ) [(x,y) | x <- enumFrom East, y<-enumFrom East] 
-        n = nub $ filter (\x -> x /= position)
+    let cross = filter (uncurry (/=) ) [(x,y) | x <- enumFrom East, y<-enumFrom East] 
+        n = nub $ filter (/= position)
             $ map (\(a,b) -> offsetPosition (offsetPosition position a) b ) cross
     in shuffle' n (length n) $ mkStdGen $ sum $ spatialPos position
 
+getNeighbors :: Position -> [Position]
 getNeighbors position =
-    nub $ filter (\x -> x /= position)
-        $ map (\x -> offsetPosition position x ) $ enumFrom East
+    nub $ filter (/= position)
+        $ map (offsetPosition position) $ enumFrom East
 
+tracePath :: forall t a.
+               Ord a =>
+               Map.Map a (t, a) -> a -> [a] -> [a]
 tracePath g end path = 
     let prev = Map.lookup end g
     in case prev of
@@ -580,9 +601,14 @@ tracePath g end path =
             then path 
             else tracePath g p $ p:path  
 
+hugeNumber :: Double
 hugeNumber = 99999999999.9
-rounder f n = (fromInteger $ round $ f * (10^n)) / (10.0^^n)
 
+rounder :: forall a s b.(RealFrac s, Integral b, Fractional a) => s -> b -> a
+rounder f n = fromInteger (round $ f * (10 ^ n)) / (10.0 ^^ n)
+
+shortestPath :: Map.Map Position (Double, Position)
+                  -> Position -> Map.Map Position (Double, Position) -> [Position]
 shortestPath unvisited end visited = if unvisited==Map.empty 
     then error "problem in shortest path.. searched everything and wasn't found" 
     else 
@@ -593,27 +619,28 @@ shortestPath unvisited end visited = if unvisited==Map.empty
                             then (n1,(n2,n3)) else (p1,(p2,p3))  ) 
                         (end,(hugeNumber,end)) 
                         $ shuffle' (Map.toList unvisited) (Map.size unvisited) $ mkStdGen 137
-            neighbors = filter (\y -> Map.notMember y visited) $ getNeighborsCorners pos 
-            updatedUnvisited = foldl' (\prev next -> 
-                    let newd = (distance next pos) + dist
-                        oldd = fst $ fromMaybe (hugeNumber,end) (Map.lookup next prev) 
+            neighbors = filter (`Map.notMember` visited) $ getNeighborsCorners pos 
+            updatedUnvisited = foldl' (\prev nxt -> 
+                    let newd = distance nxt pos + dist
+                        oldd = fst $ fromMaybe (hugeNumber,end) (Map.lookup nxt prev) 
                     in if comparer (fromIntegral $ round $ newd*oldd*57) newd oldd 
-                        then Map.insert next (newd,pos) prev
+                        then Map.insert nxt (newd,pos) prev
                         else prev
                 ) (Map.delete pos unvisited) neighbors
             updatedVisited = Map.insert pos (dist,predecessor ) visited
-        in case pos == end of
-            True -> tracePath updatedVisited end []
-            False -> shortestPath updatedUnvisited end updatedVisited
+        in (if pos == end 
+            then tracePath updatedVisited end [] 
+            else shortestPath updatedUnvisited end updatedVisited)
            
-connectBounds allPos points = fst $ foldl' 
-    (\(prevPts, lastPt) next -> 
+connectBounds :: [Position] -> [Position]
+connectBounds points = fst $ foldl' 
+    (\(prevPts, lastPt) nxt -> 
         ( prevPts 
             ++ shortestPath 
                 (Map.insert lastPt (0.0,lastPt) Map.empty) 
-                next 
+                nxt 
                 Map.empty 
-        , next) ) 
+        , nxt) ) 
     ([],last points) points
 
 fillEnclosedGaps :: [Position] -> Set.Set Position -> [Position]
@@ -621,74 +648,86 @@ fillEnclosedGaps allPos wallPos =
     let added = filter
             (\x ->
                 let opposingWalls = foldl'
-                        (\prev next ->
-                            let (s1 ,s2) = boundaryPair next
+                        (\prev nxt->
+                            let (s1 ,s2) = boundaryPair nxt
                             in prev ||
                                 ( Set.member (offsetPosition x s1) wallPos 
                                     && Set.member (offsetPosition x s2) wallPos )
                         )
                         False
                         $ enumFrom X
-                in (Set.notMember x wallPos)
-                    && opposingWalls
+                in Set.notMember x wallPos && opposingWalls
             )
             allPos
     in case added of 
         [] -> []
-        _ -> added ++ (fillEnclosedGaps allPos $ Set.union wallPos $ Set.fromList added) 
+        _ -> added ++ fillEnclosedGaps allPos (Set.union wallPos $ Set.fromList added) 
 
--- sideArea:: (Num a, Fractional a)=>Side -> Position -> a
+sideArea :: forall a. Num a => Side -> Position -> ValSet a -> a
 sideArea s (Position p d _) vs = case s of 
     Now -> 1
     Prev -> 1
-    _ -> case  Map.lookup (Position p d 0) (areaVal $! vs)  >>= Map.lookup s of
-            Nothing -> error $ "error getting side area for " ++ show p ++ " " ++ show s
-            Just sa -> sa
+    _ -> fromMaybe  (error $ "error getting side area for " ++ show p ++ " " ++ show s)
+            (Map.lookup (Position p d 0) (areaVal $! vs) >>= Map.lookup s)
 
--- sideLength:: (Num a, Fractional a) => Direction -> Position ->  a
+sideLength :: Direction -> Position -> ValSet Double -> Double
 sideLength direction (Position p d _) vs = case direction of 
     Time -> timeStep
-    _ -> case   Map.lookup (Position p d 0) (sideLen $! vs) >>= Map.lookup direction of
-            Nothing -> error $ "error getting side length for "++ show p++ " " ++ show direction
-            Just len -> len    
+    _ -> fromMaybe  (error $ "error getting side length for " ++ show p ++ " " ++ show direction)
+            (Map.lookup (Position p d 0) (sideLen $! vs) >>= Map.lookup direction)    
 
+chooseSlopeHelper :: forall a a1 s.
+                       (Ord a1, Ord a, Num a1, Num a) =>
+                       (a -> a1 -> s) -> (a -> a1 -> s) -> a -> a1 -> Maybe s
 chooseSlopeHelper f1 f2 x y =
     let sign = getSign x 
-    in if (getSign x) == (getSign y)
+    in if getSign x == getSign y
         then case sign of
                 Positive -> Just $ f1 x y
                 Negative -> Just $ f2 x y
                 Zero -> Nothing 
         else Nothing 
 
+chooseSlope :: forall b.
+                 (Ord b, Fractional b) =>
+                 (b -> b -> b) -> (b -> b -> b) -> [b] -> b
 chooseSlope f1 f2 n = 
     let res = foldM
-            (\prev next -> chooseSlopeHelper f1 f2 prev next) 
-            (n!!0) n
-    in case res of
-        Just x -> x
-        Nothing -> 0.0 
+            (chooseSlopeHelper f1 f2) 
+            (head n) n
+    in fromMaybe 0.0 res 
 
+minmod :: [Double] -> Double
 minmod = chooseSlope min max
+
+maxmod :: [Double] -> Double
 maxmod = chooseSlope max min
 
+superbee :: Double -> Double -> Double
 superbee a b = minmod [maxmod [a,b], minmod [2*a,2*b] ]
 
+minmodLimit :: Double -> Double -> Double
 minmodLimit a b = minmod [ (a + b) /2 , 2*a, 2*b ]
 
+epsilon :: forall a. Fractional a => a -> a -> a -> a
 epsilon a b eSq = ( ((b*b + eSq )*a)  + ((a*a+eSq)*b) ) / ((a*a) + (b*b) + (2*eSq)) 
 
+vanLeer :: Double -> Double -> Double
 vanLeer = altFormLimiter (\r -> let abs_r = abs r in (r+abs_r)/(1+abs_r) )  
 
+ospre :: Double -> Double -> Double
 ospre = altFormLimiter (\r -> 1.5 * (r*r + r) / (r*r + r + 1) )
 
+altFormLimiter :: forall a.
+                    (Ord a, Fractional a) =>
+                    (a -> a) -> a -> a -> a
 altFormLimiter rFunc a b = 
-    let expression steep shallow = 
+    let expr steep shallow = 
             let r = steep/shallow
             in shallow * rFunc r
     in case (getSign a, getSign b) of
-        (Positive,Positive) -> expression (max a b) (min a b)
-        (Negative,Negative) -> expression  (min a b) (max a b)
+        (Positive,Positive) -> expr (max a b) (min a b)
+        (Negative,Negative) -> expr  (min a b) (max a b)
         _-> 0.0 
 
 
