@@ -185,11 +185,7 @@ applyDiffEq (eq, saveAtNextTime,getPos) env =
         (\pos -> 
             let discEquation = getDiscEqInstance (runReader eq env) pos 
                 solvedProperty = unknownProperty discEquation
-                newValuePredicted = solveUnknown discEquation pos env
-                (currValue:( prevValue:_)) = 
-                    map (\p -> prop Nondirectional solvedProperty p Center env)
-                        [pos, if timeLevel env > 1 then offsetPosition pos Prev else pos] 
-                newValue = currValue + (0.5 * ( newValuePredicted-prevValue))
+                newValue = solveUnknown discEquation pos env
             in ( pos, solvedProperty, newValue, saveAtNextTime)
         ) (getPos env)
   
@@ -232,35 +228,34 @@ runSingleStep prev _ =
         prev
         -- this third element in this below is a waste every time EXCEPT the last time step.
         [(supportCalcSteps,False),(calcSteps,True),(supportCalcSteps,False)] 
-                
-runTimeSteps :: ValSet Double
-runTimeSteps = (\x -> foldl'  runSingleStep x [0..25] ) $! initialGrid  
 
 runTimeSteps_Print =
     foldM_
-        (\prev step -> do
-            let timeLevel = timePos $ head $ calculatedPositions prev
-            --{-
-            mapM_
-                (\nextProp ->
-                    (
-                        GP.plotAsync ( PNG.cons $ "c:\\temp\\"++ show nextProp ++ "\\"++show step ++".png") 
-                        $! plotDomainLinear $! valSetToGrid prev timeLevel nextProp (1+maxPos Y) (quot (maxPos Z)  2)
-                    )
-                ) $ enumFrom Speed
-            mapM_
-                (\nextProp ->
-                    (
-                        GP.plotAsync ( PNG.cons $ "c:\\temp\\"++ show nextProp ++ " LOGSCALE" ++ "\\"++show step ++".png") 
-                        $! plotDomainLog $! valSetToGrid prev timeLevel nextProp (1+maxPos Y) (quot (maxPos Z)  2)
-                    )
-                ) $ enumFrom Speed
-            ---}
-            putStrLn $ show $ length (calculatedPositions prev)
-            putStrLn $ "step: " ++ show step 
-            putStrLn $ "timeLevel: " ++ show timeLevel
-            --putStrLn $ stringDomain U timeLevel (1 + maxPos Y) prev (quot (maxPos Z)  2)
-            return $! runSingleStep prev ()
+        (\prev step -> 
+            let next = runSingleStep prev () 
+            in do
+                let timeLevel = timePos $ head $ calculatedPositions next
+                --{-
+                mapM_
+                    (\nextProp ->
+                        (
+                            GP.plotAsync ( PNG.cons $ "c:\\temp\\"++ show nextProp ++ "\\"++show step ++".png") 
+                            $! plotDomainLinear $! valSetToGrid next timeLevel nextProp (1+maxPos Y) (quot (maxPos Z)  2)
+                        )
+                    ) $ enumFrom Speed
+                mapM_
+                    (\nextProp ->
+                        (
+                            GP.plotAsync ( PNG.cons $ "c:\\temp\\"++ show nextProp ++ " LOGSCALE" ++ "\\"++show step ++".png") 
+                            $! plotDomainLog $! valSetToGrid next timeLevel nextProp (1+maxPos Y) (quot (maxPos Z)  2)
+                        )
+                    ) $ enumFrom Speed
+                ---}
+                putStrLn $ show $ length (calculatedPositions next)
+                putStrLn $ "step: " ++ show step 
+                putStrLn $ "timeLevel: " ++ show timeLevel
+                --putStrLn $ stringDomain U timeLevel (1 + maxPos Y) prev (quot (maxPos Z)  2)
+                return next
         )
         initialGrid
         [0..999999]
