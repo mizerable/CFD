@@ -217,7 +217,7 @@ calcSteps = [
     ,(vMomentum,  True, calculatedPositions )
     ,(wMomentum,  True, calculatedPositions )
     ,(energy,  True, allPositionsCurrentTime )  
-    ,(dye, True, calculatedPositions )
+    ,(dye, True, allPositionsCurrentTime )
     ] 
 
 supportCalcSteps = []

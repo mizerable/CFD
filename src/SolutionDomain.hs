@@ -22,7 +22,7 @@ data Equation a = Equation{
     ,rhs:: ![a]
     ,unknownProperty:: !Property}    
 data IntegralType = Body | Surface deriving (Eq)
-data Property = Speed | Vorticity | Dye | U | V | W | Density | Temperature | Mew | Pressure deriving (Ord,Eq,Enum,Show)
+data Property = Speed | Vorticity | U | V | W | Density | Temperature | Mew | Pressure|Dye deriving (Ord,Eq,Enum,Show)
 data Position = Position {
     spatialPos:: ![Int]
     ,spatialDimens :: !Int 
@@ -183,7 +183,7 @@ obstacles =
         filled ++ filledGaps
 
 timeStep :: Double            
-timeStep = 0.000001 --0.0000001
+timeStep = 0.00001 --0.0000001
 
 initialMew :: Double
 initialMew =  0.1-- 0.000018
