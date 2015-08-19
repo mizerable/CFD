@@ -22,7 +22,7 @@ data Equation a = Equation{
     ,rhs:: ![a]
     ,unknownProperty:: !Property}    
 data IntegralType = Body | Surface deriving (Eq)
-data Property = Speed | Vorticity | U | V | W | Density | Temperature | Mew | Pressure deriving (Ord,Eq,Enum,Show)
+data Property = Speed | Vorticity | Dye | U | V | W | Density | Temperature | Mew | Pressure deriving (Ord,Eq,Enum,Show)
 data Position = Position {
     spatialPos:: ![Int]
     ,spatialDimens :: !Int 
@@ -183,7 +183,7 @@ obstacles =
         filled ++ filledGaps
 
 timeStep :: Double            
-timeStep = 0.00001 --0.0000001
+timeStep = 0.000001 --0.0000001
 
 initialMew :: Double
 initialMew =  0.1-- 0.000018
@@ -206,15 +206,20 @@ specificHeatCp = 1005
 
 initialGridPre:: ValSet Double
 initialGridPre= 
-    let vMap = foldl' (\prev nxt -> Map.insert nxt 
+    let vMap (Position coords _ _) = foldl' (\prev nxt -> Map.insert nxt 
             (case nxt of 
-                U-> 100
+                U-> 50
                 V-> 0
                 W-> 0
                 Density -> 0.3 -- 1.2
                 Pressure -> 10000 -- 101325   doesn't matter, gets solved based on density and temperature. 
                 Mew -> initialMew
                 Temperature -> initialTemperature
+                Dye-> let midY = div (maxPos Y) 2
+                    in case coords of
+                        (0 : (y: _ ) ) -> if y == midY then 1 else 0
+                        _ -> 0
+                _ -> 0 
             ) 
             prev) Map.empty (enumFrom U)
         avMap = foldl' (\prev nxt ->
@@ -225,7 +230,7 @@ initialGridPre=
         slMap = foldl' (\prev nxt -> 
                     Map.insert nxt (cellLength nxt ) $! prev
                 ) Map.empty $! enumFrom X
-        v = foldl' (\prev nxt -> Map.insert nxt vMap $! prev) Map.empty  $!  makeAllPositions
+        v = foldl' (\prev nxt -> Map.insert nxt (vMap nxt) $! prev) Map.empty  $!  makeAllPositions
         av = foldl' (\prev nxt -> Map.insert nxt avMap $! prev) Map.empty $! makeAllPositions
         sl = foldl' (\prev nxt -> Map.insert nxt slMap $! prev) Map.empty $! makeAllPositions
     in ValSet makeAllPositions v av sl 0 

@@ -139,6 +139,18 @@ wMomentum =  do
             )
             W      
 
+dye = do
+    env <- ask
+    return $ let integrate = integUnknown env Dye 
+        in Equation
+            ([ integrate Temporal [runReader drhodye_dt env] >>= integrate Spatial ]
+                ++ integrateTerms integrate env (divergenceWithProps [Density , Dye] ) 
+            ) 
+            ( concatMap (integrateTerms integrate env) 
+                [ divGrad [Mew,Dye] 1  ]
+            )
+            Dye
+
 --energy::Reader (ValSet Double) (Equation (Position-> [Term Double]))
 energy =  do
     env <- ask
@@ -205,6 +217,7 @@ calcSteps = [
     ,(vMomentum,  True, calculatedPositions )
     ,(wMomentum,  True, calculatedPositions )
     ,(energy,  True, allPositionsCurrentTime )  
+    ,(dye, True, calculatedPositions )
     ] 
 
 supportCalcSteps = []

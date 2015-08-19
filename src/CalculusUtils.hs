@@ -167,6 +167,8 @@ drhov_dt =d_ [Density, V] Time
 --drhow_dt:: (Fractional a) => Reader (ValSet a) (Term a)
 drhow_dt =d_ [Density, W] Time
 
+drhodye_dt =d_ [Density, Dye] Time
+
 --drhoT_dt:: (Fractional a) => Reader (ValSet a) (Term a)
 drhoT_dt = df_ [Density, Temperature] specificHeatCv Time 
 
