@@ -147,7 +147,7 @@ dye = do
                 ++ integrateTerms integrate env (divergenceWithProps [Density , Dye] ) 
             ) 
             ( concatMap (integrateTerms integrate env) 
-                [ divGrad [Mew,Dye] 1  ]
+                [ divGrad [Mew,Dye] 0.001  ]
             )
             Dye
 
