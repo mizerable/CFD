@@ -75,16 +75,13 @@ directionFromConvection d = case d of
     W -> Z
     _ -> error "no convection for that direction"    
 
-specificHeatCv :: Double
-specificHeatCv = 716
-
 storedSteps:: Int
 storedSteps = 3
 
 maxPos :: Direction -> Int
 maxPos  d = case d of 
-    X -> 180
-    Y -> 90
+    X -> 300
+    Y -> 150
     Z -> 0
     Time -> error "no max time position"
     
@@ -204,11 +201,14 @@ gasConstantR = specificHeatCp - specificHeatCv
 specificHeatCp :: Double
 specificHeatCp = 1005
 
+specificHeatCv :: Double
+specificHeatCv = 716
+
 initialGridPre:: ValSet Double
 initialGridPre= 
     let vMap (Position coords _ _) = foldl' (\prev nxt -> Map.insert nxt 
             (case nxt of 
-                U-> 50
+                U-> 30
                 V-> 0
                 W-> 0
                 Density -> 0.3 -- 1.2

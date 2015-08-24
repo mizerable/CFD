@@ -208,7 +208,7 @@ applyResults res pushTime vs =
                     else newValAdded -- there are not enough time steps yet to do Heun's Method
             ) vs res
     in ValSet 
-        (if pushTime then map advanceTime p else p) 
+        (if pushTime then map advanceTime p else p) -- this is what determines the list of positions (inclduing time levels) of the "current" level
         v av sl (if pushTime then tl+1 else tl)
 
 calcSteps = [ 
@@ -230,7 +230,13 @@ allPositionsCurrentTime env =
 runSingleStep prev rerun = 
     let runSteps steps vs= concat $!
             --runPar $ parMap
-            map (`applyDiffEq` vs ) steps  
+            map (\step -> snd $ foldl' 
+                    (\(prevEnv,prevResList) _ ->
+                        let nextResList = applyDiffEq step nextEnv
+                            nextEnv = applyResults prevResList False prevEnv 
+                        in (nextEnv, nextResList)
+                    ) (vs , applyDiffEq step vs) [1..2]  
+                ) steps  
     in foldl'
         (\vs (nextSteps,pushTime) ->  applyResults (runSteps nextSteps vs) pushTime vs)
         prev
@@ -240,7 +246,7 @@ runSingleStep prev rerun =
 runTimeSteps_Print =
     foldM_
         (\prev step -> 
-            let next = foldl' (\lastState _ -> runSingleStep lastState False) (runSingleStep prev True) [1..10]
+            let next = foldl' (\lastState _ -> runSingleStep lastState False) (runSingleStep prev True) [1..2]
                 timeLevel = timePos $ head $ calculatedPositions next -- the first element of the list of calculated positions will give the current time slot
                 backOneTimeLevel = pushBackTime timeLevel 
             in do 
