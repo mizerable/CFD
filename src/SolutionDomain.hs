@@ -8,6 +8,8 @@ import Data.Maybe
 import Data.List
 import System.Random.Shuffle
 import System.Random
+import qualified Data.Vector as V 
+
 
 data Sign = Positive | Zero | Negative deriving (Enum,Ord,Eq,Show)
 
@@ -27,12 +29,30 @@ data Position = Position {
     spatialPos:: ![Int]
     ,spatialDimens :: !Int 
     ,timePos:: !Int } deriving (Eq, Ord, Show)
+    
 data ValSet a = ValSet{
     calculatedPositions:: ![Position]
     ,vals:: !(Map.Map Position (Map.Map Property a))
     ,areaVal:: !(Map.Map Position (Map.Map Side a))
     ,sideLen:: !(Map.Map Position (Map.Map Direction a))
     ,timeLevelAbsolute :: Int }
+
+data AdjNode  = AdjNode {
+    faceArea :: Map.Map Side Double
+    ,edgeLen :: Map.Map Direction Double
+    ,property :: Map.Map Property Double
+    ,neighbors :: Map.Map Side Int 
+    ,origPos :: Position
+}
+
+data AdjGraph = AdjGraph {
+    allNodes:: V.Vector (V.Vector AdjNode)
+    ,activeNodes :: [Int]
+    ,currModTime :: Int 
+}
+
+type AdjPos = (Int, Int) -- ( idx in vector, time position of vector modular time )  
+
 data Expression a = Expression{getTerms:: ![Term a]} 
 data Term a = 
     Constant {val:: !a}
@@ -208,7 +228,7 @@ initialGridPre:: ValSet Double
 initialGridPre= 
     let vMap (Position coords _ _) = foldl' (\prev nxt -> Map.insert nxt 
             (case nxt of 
-                U-> 30
+                U-> 10
                 V-> 0
                 W-> 0
                 Density -> 0.3 -- 1.2
@@ -342,6 +362,20 @@ offsetPosition (Position p d t) side = case side of
                 else 0
         in modifyPositionComponent position direction 
             $ maxOrMin boundary $ getPositionComponent position direction + offsetAmount   
+
+getNode :: AdjGraph -> AdjPos -> AdjNode
+getNode (AdjGraph g _ _) (i,t) = g V.! t V.! i
+
+offsetPosition_adj:: AdjPos->Side -> AdjGraph ->AdjPos
+offsetPosition_adj (idx,t) side env = case side of
+    Center -> (idx,t) 
+    Now -> (idx,t) 
+    Prev -> (idx, pushBackTime t)   
+    _ -> 
+        let neighs = neighbors $ getNode env (idx,t)   
+        in case Map.lookup side neighs of
+            Just n -> (n,t)
+            Nothing -> (idx,t)
 
 getPositionComponent:: Position -> Direction -> Int
 getPositionComponent (Position p _ t) direction = case direction of 
@@ -511,10 +545,10 @@ propLimitedSlope property position side env =
         upperNVal:(lowerNVal:_)  
             = map (\s -> propCentralDiff property (offsetPosition position s) Center env) 
                 [upper,lower] 
-        --ave = superbee (upperNVal - valCenter) (valCenter - lowerNVal)
+        ave = superbee (upperNVal - valCenter) (valCenter - lowerNVal)
         --ave = epsilon (upperNVal - valCenter) (valCenter - lowerNVal) (interval *interval *interval)
         --ave = minmodLimit (upperNVal - valCenter) (valCenter - lowerNVal)
-        ave = ospre (upperNVal - valCenter) (valCenter - lowerNVal)
+        -- ave = ospre (upperNVal - valCenter) (valCenter - lowerNVal)
         -- ave = vanLeer (upperNVal - valCenter) (valCenter - lowerNVal)
         --ave = ((upperNVal - valCenter)+(valCenter - lowerNVal))/2
     in (if isUpperSide side then (+) else (-)) valCenter  
@@ -529,6 +563,38 @@ propCentralDiff property position side env =
                                     [0..spatialDimens position-1] 
                             ++ " "
                             ++ show (timePos position)++ " "
+                            ++ show property ++ " "
+                            ++ show side)
+        getVal:: Position -> Map.Map Position (Map.Map Property Double) -> Double
+        getVal p set = fromMaybe 
+            --noValError
+            (case property of
+                Density -> noValError
+                Temperature -> noValError
+                Pressure -> noValError 
+                _ -> case  Map.lookup (modifyPositionComponent p Time 0) (vals initialGrid )>>= Map.lookup property of
+                        Nothing -> noValError
+                        Just r -> r
+            )   
+            (Map.lookup p set >>= Map.lookup property)
+        res p = getVal p (vals env )
+    in case (isObstaclePosition neighbor || isObstaclePosition position
+                , isMomentum property, position == neighbor) of
+        --(True,True,_) -> 0.0
+        (_,_,True) -> res position
+        _ -> average [ res position, res neighbor]
+
+propCentralDiff_adj :: Property -> AdjPos -> Side -> AdjGraph-> Double
+propCentralDiff_adj property (idx,t) side env = 
+    let (n_idx, n_t) = offsetPosition_adj (idx,t) side env
+        thisNode = getNode env (idx,t)
+        originalPos = origPos thisNode
+        noValError = error ("no value "
+                            ++ 
+                                foldl' (\prev nxt -> prev ++ " " ++ show (spatialPos originalPos !! nxt)) "" 
+                                    [0..spatialDimens originalPos-1] 
+                            ++ " "
+                            ++ show t ++ " "
                             ++ show property ++ " "
                             ++ show side)
         getVal:: Position -> Map.Map Position (Map.Map Property Double) -> Double
