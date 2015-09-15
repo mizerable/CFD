@@ -40,7 +40,7 @@ solveUnknown (Equation l r _) position vs=
             _ -> 0
         sumConstants p n =  p + case n of
             Constant c-> c
-            Derivative {}-> sumExpression sumConstants [approximateDerivative n position vs]  
+            --Derivative {}-> sumExpression sumConstants [approximateDerivative_adj n position vs]  
             SubExpression s -> sumExpression sumConstants $! getTerms s
             _ -> 0
         sumExpression s = foldl' s 0
@@ -56,40 +56,14 @@ distributeMultiply terms m = concatMap (multTerm m) terms
 --multTerm:: (Num a)=> a -> Term a -> [Term a]
 multTerm m term  = case term of
     SubExpression s -> distributeMultiply ( getTerms s  ) m
-    Derivative direc func side multF->  
+    {-Derivative direc func side multF->  
         let modf st x s = fmap (*m) (func st x s)   
-        in [Derivative direc modf side multF]
+        in [Derivative direc modf side multF]-}
     Derivative_adj direc func side multF->  
         let modf st x s = fmap (*m) (func st x s)   
         in [Derivative_adj direc modf side multF]
     _-> [fmap (*m) term]
-                
---integSurface:: (Num a,Fractional a, RealFloat a)=> (Side->Term a) -> Position -> Direction ->Property-> Reader (ValSet a) [Term a]
-integSurface f position direction unknownProp= do
-    vs <- ask
-    return $ 
-        let (s1, s2) = boundaryPair direction 
-            value s isUpper =
-                let modf = if isUpper then f 
-                        else (\x -> let [res] = multTerm (-1) x
-                                in res  ).f 
-                    term = modf s
-                    sideAreaVal = sideArea s position vs
-                    isUnknown = (direcDimenType direction,isUpper) == (Temporal,True) 
-                in case term of
-                    Derivative d subf _ m-> head $ multTerm sideAreaVal $ Derivative d subf s m
-                    SubExpression (Expression expr) -> SubExpression $ Expression $ distributeMultiply expr sideAreaVal
-                    _-> if isUnknown 
-                        then 
-                            let constantVal = fmap
-                                    (* (sideAreaVal 
-                                        / prop Directional unknownProp position s vs)) 
-                                    term
-                            in Unknown $ if isNaN (val constantVal) 
-                                then 1 else val constantVal      
-                        else fmap (* sideAreaVal) term
-        in [value s1 True , value s2 False]  
-        
+ 
 integSurface_adj f position direction unknownProp= do
     vs <- ask
     return $ 
@@ -114,25 +88,6 @@ integSurface_adj f position direction unknownProp= do
                                 then 1 else val constantVal      
                         else fmap (* sideAreaVal) term
         in [value s1 True , value s2 False]       
-       
-integSingleTerm :: forall (m :: * -> *).
-                         MonadReader (ValSet Double) m =>
-                         Term Double
-                         -> DimensionType -> Position -> Property -> m [Term Double]
-integSingleTerm term dimetype cellposition unknownProp=  do
-    vs <- ask
-    return $
-        let nonDerivAnswer = case term of 
-                SubExpression _ -> error "can't integrate a subexpression as a single term"
-                _ -> multTerm (volumeOrInterval dimetype cellposition vs) term   
-        in case term of     
-            Derivative direction func _ _->
-                if direcDimenType direction == dimetype  
-                then runReader 
-                        (integSurface ( func Directional cellposition ) cellposition direction unknownProp)
-                        vs
-                else nonDerivAnswer
-            _ -> nonDerivAnswer    
 
 integSingleTerm_adj :: forall (m :: * -> *).
                          MonadReader AdjGraph m =>
@@ -152,15 +107,7 @@ integSingleTerm_adj term dimetype cellposition unknownProp=  do
                         vs
                 else nonDerivAnswer
             _ -> nonDerivAnswer    
-
-integ vs dimetype terms cellposition = do
-    unknownProp <- ask
-    return $ case terms of
-        [] -> []
-        (x:xs) -> runReader 
-            (integSingleTerm x dimetype cellposition unknownProp) vs 
-            ++ runReader (integ vs dimetype xs cellposition) unknownProp   
-            
+         
 integ_adj vs dimetype terms cellposition = do
     unknownProp <- ask
     return $ case terms of
@@ -279,17 +226,7 @@ integrateOrder :: forall (m :: * -> *) b t.
                         Monad m =>
                         (t -> b -> m b) -> t -> t -> b -> m b
 integrateOrder integrate i1 i2 term = integrate i1 term >>= integrate i2
-        
-multProps props schemeType= 
-    let func = prop schemeType
-    in foldl' 
-        (\prev next pos side->
-            do
-                vs <- ask
-                return $ runReader (prev pos side) vs *  func next pos side vs)          
-        (\_ _ -> return 1)
-        props  
-        
+
 multProps_adj props schemeType= 
     let func = prop_adj schemeType
     in foldl' 

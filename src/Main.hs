@@ -7,6 +7,7 @@ import SolutionDomain
 import CalculusUtils
 import Data.List
 import Control.Monad.Reader as Reader
+import qualified Data.Vector as V
 
 --{-
 import Control.Monad.Par as Par
@@ -21,6 +22,7 @@ import Graphics.Gnuplot.Terminal.PNG as PNG
 
 instance Par.NFData Property 
 instance Par.NFData Position
+instance Par.NFData AdjNode
 
  
 defltOpts :: Graph.C graph => Opts.T graph
@@ -77,7 +79,7 @@ testEquation =
         U
 
 --continuity::(Num a, Fractional a, RealFloat a)=> Reader (ValSet a) (Equation (Position-> [Term a]))
---continuity::Reader (ValSet Double) (Equation (Position-> [Term Double]))
+--continuity::Reader AdjGraph (Equation (AdjPos-> [Term Double]))
 continuity = do
     env <- ask
     return $ let integrate = integUnknown env Density 
@@ -181,102 +183,131 @@ energy =  do
 getDiscEqInstance :: forall a t.Equation (t -> [a]) -> t -> Equation a
 getDiscEqInstance (Equation l r up) pos = Equation (concatMap (\t -> t pos) $! l) (concatMap (\t -> t pos) $! r) up
 
-applyDiffEq (eq, saveAtNextTime,getPos) env =
-    runPar $ parMap
-    --map
-        (\pos -> 
-            let discEquation = getDiscEqInstance (runReader eq env) pos 
-                solvedProperty = unknownProperty discEquation
-                newValue = solveUnknown discEquation pos env
-            in ( pos, solvedProperty, newValue, saveAtNextTime)
-        ) (getPos env)
-  
-
-applyResults :: [(Position, Property, Double, Bool)] -> Bool -> ValSet Double -> ValSet Double
-applyResults res pushTime vs = 
-    let (ValSet p v av sl tl) = foldl' 
-            (\prevEnv (pos,prp,newVal,saveAtNextTime)  ->
-                let newPos = if saveAtNextTime 
-                        then advanceTime pos 
-                        else pos
-                    newValAdded = setVal prevEnv newPos prp newVal -- really the intermediate value has been added, wil be corrected next time step
-                in if timeLevelAbsolute newValAdded > 0 
-                    then 
-                        let prevVal = prop Nondirectional prp (offsetPosition pos Prev) Center newValAdded
-                            correctedCurrVal = prevVal + 0.5 * ( newVal - prevVal) 
-                        in setVal newValAdded pos prp correctedCurrVal
-                    else newValAdded -- there are not enough time steps yet to do Heun's Method
-            ) vs res
-    in ValSet 
-        (if pushTime then map advanceTime p else p) -- this is what determines the list of positions (inclduing time levels) of the "current" level
-        v av sl (if pushTime then tl+1 else tl)
-
-calcSteps = [ 
-    (continuity, True, allPositionsCurrentTime )
-    ,(uMomentum, True, calculatedPositions )
-    ,(vMomentum,  True, calculatedPositions )
-    ,(wMomentum,  True, calculatedPositions )
-    ,(energy,  True, allPositionsCurrentTime )  
-    ,(dye, True, calculatedPositions )
+calcSteps_adj = [ 
+    (continuity,True) --run on all nodes
+    ,(uMomentum,False)
+    ,(vMomentum,False)
+    ,(wMomentum,False)
+    ,(energy,  True)  --run on all nodes
+    ,(dye, False)
     ] 
 
+setNodeProperty (AdjNode f e p n o a ) prp value =
+    AdjNode f e (Map.insert prp value p) n o a
+
+getNodeProperty (AdjNode _ _ p _ _ _ ) prp = case Map.lookup prp p of
+    Just v -> v
+    Nothing -> error $ "doesn't seem like this node has the requested property" ++ show prp
+
+runSingleStep adjgraph = foldl'
+    (\prev next -> 
+        let advanceTime = if next ==0 then True else False
+            predicted = applyDiffEq_adj calcSteps_adj advanceTime prev
+            corrected = correctPrevTime predicted calcSteps_adj
+        in corrected
+    )
+    adjgraph [0..2]
+
+applyDiffEq_adj equations stepTime (AdjGraph aln cmt cat )=
+    let new_cmt = if stepTime then pushUpTime cmt else cmt
+        new_cat = if stepTime then cat + 1 else cat
+        env = (AdjGraph aln cmt cat )
+        new_aln = V.map -- loop through time slots, only updating the one necessary
+            (\i->
+                let grid = aln V.! i
+                in if i == new_cmt 
+                    then runPar $ parMap -- loop through the nodes
+                        (\j ->
+                            let pos = (j,cmt) -- cmt is used here because regardless of if you save it here or next time slot the source data is always this slot
+                                node = grid V.! j 
+                            in  foldl' (\prev (next_eq,alwaysRun ) -> -- loop through the equations to run on this node
+                                            let discEquation = getDiscEqInstance (runReader next_eq env) pos  
+                                                solvedProperty = unknownProperty discEquation
+                                                newValue = solveUnknown discEquation pos env
+                                            in if alwaysRun || (active node)
+                                                then setNodeProperty prev solvedProperty newValue
+                                                else prev
+                                    ) node equations    
+                        ) $ V.fromList [0.. (V.length grid -1 )]
+                    else grid -- if the time slot isn't what's being updated then just give it back
+            ) $ V.fromList [0.. (V.length aln -1)]
+    in AdjGraph new_aln new_cmt new_cat
+
+correctPrevTime (AdjGraph aln cmt cat ) equations = 
+    let to_be_corrected_t = pushBackTime cmt
+        concrete_t = pushBackTime to_be_corrected_t
+        prev_grid = aln V.! to_be_corrected_t
+        prev_prev_grid = aln V.! concrete_t
+        curr_grid = aln V.! cmt
+        env = AdjGraph aln cmt cat
+        corrected_prev_grid =  
+            runPar $ parMap -- loop through the nodes
+                (\j -> 
+                    let prev_prev_node = prev_prev_grid V.! j
+                        curr_node = curr_grid V.! j
+                    in foldl' ( \prev (next_eq,alwaysRun)  -> -- loop through the equations just to know what property to correct
+                                let solvedProperty = unknownProperty (runReader next_eq env)
+                                    c = getNodeProperty curr_node solvedProperty
+                                    pp = getNodeProperty prev_prev_node solvedProperty
+                                    newValue = pp + (0.5 * ( c - pp))
+                                in if alwaysRun || (active prev)
+                                    then setNodeProperty prev solvedProperty newValue
+                                    else prev
+                        ) (prev_grid V.! j) equations      
+                ) $ V.fromList [0.. (V.length prev_grid -1 )]
+        corrected_aln = 
+            V.map
+                (\i->
+                    let grid = aln V.! i
+                    in if i == to_be_corrected_t 
+                        then corrected_prev_grid 
+                        else grid 
+                ) $ V.fromList [0.. (V.length aln -1)]
+    in if cat > 0 
+        then AdjGraph corrected_aln cmt cat
+        else AdjGraph aln cmt cat 
+        
 supportCalcSteps = []
 
 allPositionsCurrentTime env = 
-    map (\x-> modifyPositionComponent x Time $ currModTime env) makeAllPositions 
-
-runSingleStep prev rerun = 
-    let runSteps steps vs= concat $!
-            --runPar $ parMap
-            map (\step -> snd $ foldl' 
-                    (\(prevEnv,prevResList) _ ->
-                        let nextResList = applyDiffEq step nextEnv
-                            nextEnv = applyResults prevResList False prevEnv 
-                        in (nextEnv, nextResList)
-                    ) (vs , applyDiffEq step vs) [1..2]  
-                ) steps  
-    in foldl'
-        (\vs (nextSteps,pushTime) ->  applyResults (runSteps nextSteps vs) pushTime vs)
-        prev
-        -- this third element in this below is a waste every time EXCEPT the last time step.
-        $ map (\(x,r) -> (x,r && rerun) ) [(supportCalcSteps,False),(calcSteps,True),(supportCalcSteps,False)] 
+    map (\(idx,_)-> (idx, currModTime env) ) makeAllPositions_adj 
 
 runTimeSteps_Print =
     foldM_
         (\prev step -> 
-            let next = foldl' (\lastState _ -> runSingleStep lastState False) (runSingleStep prev True) [1..2]
-                timeLevel = timePos $ head $ calculatedPositions next -- the first element of the list of calculated positions will give the current time slot
-                backOneTimeLevel = pushBackTime timeLevel 
+            let next =  runSingleStep prev
+                backOneTimeLevel = pushBackTime $ currModTime next 
             in do 
                 --{-
                 -- use the most recent valset but one time step BACK because that will have been corrected. the most recent time level is NOT YET CORRECTED. it has JUST BEEN CALCULATED AND IS INTERMEDIATE
                 mapM_
                     (\nextProp ->
                         GP.plotAsync ( PNG.cons $ "c:\\temp\\"++ show nextProp ++ "\\"++show step ++".png") 
-                        $! plotDomainLinear $! valSetToGrid next backOneTimeLevel nextProp (1+maxPos Y) (quot (maxPos Z)  2)
+                        $! plotDomainLinear $! adjGraphToGrid next backOneTimeLevel nextProp (1+maxPos Y) (quot (maxPos Z)  2)
                     ) $ enumFrom Speed
                 mapM_
                     (\nextProp ->
                         GP.plotAsync ( PNG.cons $ "c:\\temp\\"++ show nextProp ++ " LOGSCALE" ++ "\\"++show step ++".png") 
-                        $! plotDomainLog $! valSetToGrid next backOneTimeLevel nextProp (1+maxPos Y) (quot (maxPos Z)  2)
+                        $! plotDomainLog $! adjGraphToGrid next backOneTimeLevel nextProp (1+maxPos Y) (quot (maxPos Z)  2)
                     ) $ enumFrom Speed
                 ---}
-                putStrLn $ show $ length (calculatedPositions next)
-                putStrLn $ show $ Map.size (vals next)
+                putStrLn $ show $ length (allPositionsCurrentTime next)
                 putStrLn $ "step: " ++ show step 
-                putStrLn $ "timeLevel: " ++ show timeLevel
-                putStrLn $ "timeLevelAbsolute: " ++ show (timeLevelAbsolute next)
+                putStrLn $ "timeLevel: " ++ show (currModTime next)
+                putStrLn $ "timeLevelAbsolute: " ++ show (currAbsTime next)
                 putStrLn " "
                 --putStrLn $ stringDomain U timeLevel (1 + maxPos Y) prev (quot (maxPos Z)  2)
                 return next
         )
-        initialGrid
+        initialGrid_adj
         [0..999999]
- 
+
+{- 
 testTerms = [Unknown 2.4, Constant 1.2, Constant 3.112, Unknown (-0.21),  SubExpression (Expression [Constant 2, Constant 2, SubExpression (Expression [Unknown 0.33333])])]
 
 testEq :: forall a.Reader (ValSet Double) (Equation (Position -> [a])) -> Equation a
 testEq eq = getDiscEqInstance ( runReader eq $! initialGrid) testPosition 
+
             
 --writeTermsOrig:: (Num a, Show a, Fractional a)=> [Term a] -> String
 writeTermsOrig terms vs=
@@ -284,43 +315,45 @@ writeTermsOrig terms vs=
             Unknown u -> show u ++ "X + "
             Constant c -> show c ++ " + "
             SubExpression s -> writeTerms (getTerms s) vs ++ " + "
-            Derivative d _ side _-> 
-                "approxDeriv ( " ++ writeTerms [approximateDerivative t testPosition vs] vs
+            Derivative_adj d _ side _-> 
+                "approxDeriv ( " ++ writeTerms [approximateDerivative_adj t testPosition vs] vs
                     ++ show d ++ " " ++ show  side ++" ) + " 
     in foldl' writeTerm " " (reverse terms )  
 
-writeTerms :: [Term Double] -> ValSet Double-> String
+writeTerms :: [Term Double] -> AdjGraph -> String
 writeTerms terms vs=
     let (_:_:xs) =  reverse $! writeTermsOrig terms vs
     in reverse xs
   
 testPosition =   Position [1, 1, 0] 3 0
-    
+ -}
+   
 makeRows :: [[Double]] -> [Double]-> [Double] -> Int -> Int-> [[Double]]    
 makeRows whole curr [] _ _ = whole ++ [curr]    
 makeRows whole curr items 0 width = makeRows (whole ++ [curr] ) [] items width width          
 makeRows whole curr (x:xs) r width= makeRows whole (curr++[x]) xs (r-1) width   
 
-valSetToGrid vs timeLevel prp rowLength zLevel=
+adjGraphToGrid vs timeLevel prp rowLength zLevel=
     let positions = 
             filter (\next-> getPositionComponent next Z == zLevel) $ 
             map 
                 (\(Position p d _) -> Position p d timeLevel)
                 makeAllPositions
     in makeRows [] [] 
-            (map (\next -> prop Nondirectional prp next Center vs )  positions )
+            (map (\next -> prop_adj Nondirectional prp next Center vs )  $ allPositionsCurrentTime vs)
             rowLength
             rowLength 
              
 --stringDomain:: (Num a, Fractional a, Show a ) => Property ->[Position]->Int-> ValSet a -> String
 stringDomain prp timeLevel rowLength set zLevel =
-    let rows = valSetToGrid set timeLevel prp rowLength zLevel  
+    let rows = adjGraphToGrid set timeLevel prp rowLength zLevel  
         strRows = map ( foldl' (\prev next-> prev ++ " " ++ show next) "" ) rows
     in foldl' (\prev next -> prev ++ "\n" ++ next ) "" strRows 
             
 main:: IO()
 main = 
     putStrLn "starting ..... "
+    {-
     >>= (\_-> print ( solveUnknown testEquation ( Position [0, 0, 0] 3 0) initialGrid )) 
     >>= (\_ -> putStrLn $ writeTerms (distributeMultiply testTerms 2) initialGrid)
     >>= (\_ -> print $ prop Nondirectional U testPosition Center  initialGrid)
@@ -359,3 +392,4 @@ main =
     -- >>= (\_ -> putStrLn $! stringDomain U ( timePos $ offsetPosition (head $ calculatedPositions runTimeSteps) Prev) (1+maxPos X) runTimeSteps  )
     -- >>= (\_ -> putStrLn $! stringDomain U (timePos $ head $ calculatedPositions runTimeSteps) (1+maxPos X) runTimeSteps  )
     >>= (\_ -> runTimeSteps_Print )
+    -}
