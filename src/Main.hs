@@ -195,16 +195,16 @@ applyDiffEq (eq, saveAtNextTime,getPos) env =
 applyResults :: [(Position, Property, Double, Bool)] -> Bool -> ValSet Double -> ValSet Double
 applyResults res pushTime vs = 
     let (ValSet p v av sl tl) = foldl' 
-            (\prevEnv (pos,property,newVal,saveAtNextTime)  ->
+            (\prevEnv (pos,prp,newVal,saveAtNextTime)  ->
                 let newPos = if saveAtNextTime 
                         then advanceTime pos 
                         else pos
-                    newValAdded = setVal prevEnv newPos property newVal -- really the intermediate value has been added, wil be corrected next time step
+                    newValAdded = setVal prevEnv newPos prp newVal -- really the intermediate value has been added, wil be corrected next time step
                 in if timeLevelAbsolute newValAdded > 0 
                     then 
-                        let prevVal = prop Nondirectional property (offsetPosition pos Prev) Center newValAdded
+                        let prevVal = prop Nondirectional prp (offsetPosition pos Prev) Center newValAdded
                             correctedCurrVal = prevVal + 0.5 * ( newVal - prevVal) 
-                        in setVal newValAdded pos property correctedCurrVal
+                        in setVal newValAdded pos prp correctedCurrVal
                     else newValAdded -- there are not enough time steps yet to do Heun's Method
             ) vs res
     in ValSet 
@@ -222,10 +222,8 @@ calcSteps = [
 
 supportCalcSteps = []
 
-allPositionsCurrentTime :: forall a. ValSet a -> [Position]
 allPositionsCurrentTime env = 
-    let curTimeLevel = timePos $ head $ calculatedPositions env
-    in map (\x-> modifyPositionComponent x Time curTimeLevel ) makeAllPositions 
+    map (\x-> modifyPositionComponent x Time $ currModTime env) makeAllPositions 
 
 runSingleStep prev rerun = 
     let runSteps steps vs= concat $!
@@ -303,20 +301,20 @@ makeRows whole curr [] _ _ = whole ++ [curr]
 makeRows whole curr items 0 width = makeRows (whole ++ [curr] ) [] items width width          
 makeRows whole curr (x:xs) r width= makeRows whole (curr++[x]) xs (r-1) width   
 
-valSetToGrid vs timeLevel property rowLength zLevel=
+valSetToGrid vs timeLevel prp rowLength zLevel=
     let positions = 
             filter (\next-> getPositionComponent next Z == zLevel) $ 
             map 
                 (\(Position p d _) -> Position p d timeLevel)
                 makeAllPositions
     in makeRows [] [] 
-            (map (\next -> prop Nondirectional property next Center vs )  positions )
+            (map (\next -> prop Nondirectional prp next Center vs )  positions )
             rowLength
             rowLength 
              
 --stringDomain:: (Num a, Fractional a, Show a ) => Property ->[Position]->Int-> ValSet a -> String
-stringDomain property timeLevel rowLength set zLevel =
-    let rows = valSetToGrid set timeLevel property rowLength zLevel  
+stringDomain prp timeLevel rowLength set zLevel =
+    let rows = valSetToGrid set timeLevel prp rowLength zLevel  
         strRows = map ( foldl' (\prev next-> prev ++ " " ++ show next) "" ) rows
     in foldl' (\prev next -> prev ++ "\n" ++ next ) "" strRows 
             

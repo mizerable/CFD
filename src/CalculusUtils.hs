@@ -9,11 +9,14 @@ direcDimenType:: Direction -> DimensionType
 direcDimenType direc = case direc of
     Time -> Temporal
     _ -> Spatial
-
---volumeOrInterval:: (Num a, Fractional a ) => DimensionType -> Position ->a  
+  
 volumeOrInterval dimetype position vs = case dimetype of
     Temporal -> timeStep
     Spatial -> foldl' (\p d  -> p * sideLength d position vs) 1 $! enumFrom X 
+    
+volumeOrInterval_adj dimetype x env = case dimetype of
+    Temporal -> timeStep
+    Spatial -> foldl' (\p d  -> p * sideLength_adj d x env) 1 $! enumFrom X
 
 c2D:: Property -> Direction
 c2D c = case c of
@@ -56,6 +59,9 @@ multTerm m term  = case term of
     Derivative direc func side multF->  
         let modf st x s = fmap (*m) (func st x s)   
         in [Derivative direc modf side multF]
+    Derivative_adj direc func side multF->  
+        let modf st x s = fmap (*m) (func st x s)   
+        in [Derivative_adj direc modf side multF]
     _-> [fmap (*m) term]
                 
 --integSurface:: (Num a,Fractional a, RealFloat a)=> (Side->Term a) -> Position -> Direction ->Property-> Reader (ValSet a) [Term a]
@@ -82,6 +88,31 @@ integSurface f position direction unknownProp= do
                             in Unknown $ if isNaN (val constantVal) 
                                 then 1 else val constantVal      
                         else fmap (* sideAreaVal) term
+        in [value s1 True , value s2 False]  
+        
+integSurface_adj f position direction unknownProp= do
+    vs <- ask
+    return $ 
+        let (s1, s2) = boundaryPair direction 
+            value s isUpper =
+                let modf = if isUpper then f 
+                        else (\x -> let [res] = multTerm (-1) x
+                                in res  ).f 
+                    term = modf s
+                    sideAreaVal = sideArea_adj s position vs
+                    isUnknown = (direcDimenType direction,isUpper) == (Temporal,True) 
+                in case term of
+                    Derivative_adj d subf _ m-> head $ multTerm sideAreaVal $ Derivative_adj d subf s m
+                    SubExpression (Expression expr) -> SubExpression $ Expression $ distributeMultiply expr sideAreaVal
+                    _-> if isUnknown 
+                        then 
+                            let constantVal = fmap
+                                    (* (sideAreaVal 
+                                        / prop_adj Directional unknownProp position s vs)) 
+                                    term
+                            in Unknown $ if isNaN (val constantVal) 
+                                then 1 else val constantVal      
+                        else fmap (* sideAreaVal) term
         in [value s1 True , value s2 False]       
        
 integSingleTerm :: forall (m :: * -> *).
@@ -103,6 +134,25 @@ integSingleTerm term dimetype cellposition unknownProp=  do
                 else nonDerivAnswer
             _ -> nonDerivAnswer    
 
+integSingleTerm_adj :: forall (m :: * -> *).
+                         MonadReader AdjGraph m =>
+                         Term Double
+                         -> DimensionType -> AdjPos -> Property -> m [Term Double]
+integSingleTerm_adj term dimetype cellposition unknownProp=  do
+    vs <- ask
+    return $
+        let nonDerivAnswer = case term of 
+                SubExpression _ -> error "can't integrate a subexpression as a single term"
+                _ -> multTerm (volumeOrInterval_adj dimetype cellposition vs) term   
+        in case term of     
+            Derivative_adj direction func _ _->
+                if direcDimenType direction == dimetype  
+                then runReader 
+                        (integSurface_adj ( func Directional cellposition ) cellposition direction unknownProp)
+                        vs
+                else nonDerivAnswer
+            _ -> nonDerivAnswer    
+
 integ vs dimetype terms cellposition = do
     unknownProp <- ask
     return $ case terms of
@@ -110,27 +160,28 @@ integ vs dimetype terms cellposition = do
         (x:xs) -> runReader 
             (integSingleTerm x dimetype cellposition unknownProp) vs 
             ++ runReader (integ vs dimetype xs cellposition) unknownProp   
+            
+integ_adj vs dimetype terms cellposition = do
+    unknownProp <- ask
+    return $ case terms of
+        [] -> []
+        (x:xs) -> runReader 
+            (integSingleTerm_adj x dimetype cellposition unknownProp) vs 
+            ++ runReader (integ_adj vs dimetype xs cellposition) unknownProp
 
---d_::[Property]-> Direction -> Reader (ValSet Double) (Term Double)
+d_::[Property]-> Direction -> Reader AdjGraph (Term Double)
 d_ properties = df_ properties 1 
 
 -- df_ :: (Num a,Fractional a) => [Property]-> a ->Direction -> Reader (ValSet a) (Term a)
-df_ :: [Property]-> Double ->Direction -> Reader (ValSet Double) (Term Double)      
+df_ :: [Property]-> Double ->Direction -> Reader AdjGraph (Term Double)      
 df_ properties factor = dfm_ properties factor (\_ _ _ -> 1)         
 
-dfm_ :: forall (m :: * -> *).
-          MonadReader (ValSet Double) m =>
-          [Property]
-          -> Double
-          -> (SchemeType -> Position -> Side -> Double)
-          -> Direction
-          -> m (Term Double)
 dfm_ properties factor multF direction = do
     d<-ask 
-    return $ Derivative direction 
-        (\st x s -> Constant $ runReader (  multProps properties st x s ) d   * factor )
+    return $ Derivative_adj direction 
+        (\st x s -> Constant $ runReader (  multProps_adj properties st x s ) d   * factor )
         Center
-        multF       
+        multF      
       
 --dd_ :: (Num a,Fractional a)=> Reader (ValSet a) (Term a) -> Direction -> Reader (ValSet a) (Term a)
 dd_ inner  = ddf_ inner 1 
@@ -140,7 +191,7 @@ ddf_ inner factor = ddfm_ inner factor (\_ _ _ -> return 1)
 
 ddfm_ inner factor multF direction = do
     d<- ask
-    return $ Derivative 
+    return $ Derivative_adj
         direction 
         (\_ _ _-> head $! multTerm factor $! runReader inner d  ) 
         Center 
@@ -204,7 +255,7 @@ divergence :: forall (m :: * -> *) a r.
                     [Reader r (Term a)] -> [m (Term a)]
 divergence vector = map ( uncurry dd_) $! zip vector (enumFrom X)  
     
-gradient :: [Property] -> Double -> [Reader (ValSet Double) (Term Double)]
+gradient :: [Property] -> Double -> [Reader AdjGraph (Term Double)]
 gradient properties constantFactor = map (df_ properties constantFactor) $! enumFrom X  
 
 integrateTerms :: forall (m :: * -> *) t r.
@@ -212,15 +263,15 @@ integrateTerms :: forall (m :: * -> *) t r.
                     (DimensionType -> [t] -> m [t]) -> r -> [Reader r t] -> [m [t]]
 integrateTerms integrate env =map (\term -> integrateOrder integrate Spatial Temporal [runReader term env] )  
 
-divergenceWithProps :: [Property]-> [Reader (ValSet Double) (Term Double)]
+divergenceWithProps :: [Property]-> [Reader AdjGraph (Term Double)]
 divergenceWithProps properties = divergenceWithPropsFactor properties 1  
 
-divergenceWithPropsFactor :: [Property] -> Double -> [Reader (ValSet Double) (Term Double)]
+divergenceWithPropsFactor :: [Property] -> Double -> [Reader AdjGraph (Term Double)]
 divergenceWithPropsFactor properties constantFactor = 
     map (\x -> df_ (properties++[d2C x]) constantFactor x ) (enumFrom X)
  
 divGrad :: forall (m :: * -> *).
-                 MonadReader (ValSet Double) m =>
+                 MonadReader AdjGraph m =>
                  [Property] -> Double -> [m (Term Double)]
 divGrad properties constantFactor = divergence $ gradient properties constantFactor  
 
@@ -238,34 +289,43 @@ multProps props schemeType=
                 return $ runReader (prev pos side) vs *  func next pos side vs)          
         (\_ _ -> return 1)
         props  
-      
+        
+multProps_adj props schemeType= 
+    let func = prop_adj schemeType
+    in foldl' 
+        (\prev next pos side->
+            do
+                vs <- ask
+                return $ runReader (prev pos side) vs *  func next pos side vs)          
+        (\_ _ -> return 1)
+        props  
+     
 squareDerivative :: forall (m :: * -> *).
-                          MonadReader (ValSet Double) m =>
+                          MonadReader AdjGraph m =>
                           [Property] -> Double -> Direction -> [m (Term Double)]
 squareDerivative properties constantFactor direction = 
-    let foldedProps = multProps properties
+    let foldedProps = multProps_adj properties
     in [ ddf_ (d_ (properties++properties) direction) (constantFactor/2) direction
         ,ddfm_ (d_ properties direction) (constantFactor * (-1)) foldedProps direction] 
 
-pairedMultipliedDerivatives :: forall (m :: * -> *).
-                                     MonadReader (ValSet Double) m =>
+pairedMultipliedDerivatives:: forall (m :: * -> *).
+                                     MonadReader AdjGraph  m =>
                                      [Property]
                                      -> [Property] -> Direction -> Direction -> [m (Term Double)]
 pairedMultipliedDerivatives props1 props2 dir1 dir2 = 
-    let p1 = multProps props1 
-        p2 = multProps props2
+    let p1 = multProps_adj props1 
+        p2 = multProps_adj props2
     in [dd_ (d_ (props1++props2) dir1) dir2,
         ddfm_ (d_ props1 dir1) (-1) p2 dir2,
         ddfm_ (d_ props2 dir1) (-1) p1 dir2]
 
-integUnknown :: ValSet Double
+integUnknown :: AdjGraph
                   -> Property
                   -> DimensionType
                   -> [Term Double]
-                  -> Position
+                  -> AdjPos
                   -> [Term Double]
 integUnknown env unknownProp dimetype terms cellposition = 
-    runReader (integ env dimetype terms cellposition)unknownProp
-
+    runReader (integ_adj env dimetype terms cellposition)unknownProp
 
 

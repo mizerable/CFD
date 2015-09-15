@@ -10,7 +10,6 @@ import System.Random.Shuffle
 import System.Random
 import qualified Data.Vector as V 
 
-
 data Sign = Positive | Zero | Negative deriving (Enum,Ord,Eq,Show)
 
 data Side =  Now | Prev |East | West | North | South | Top | Bottom | Center deriving (Show,Eq,Ord, Enum)
@@ -59,7 +58,9 @@ data Term a =
     | Unknown { coeff:: !a }
     | SubExpression {expression:: !(Expression a) }  
     | Derivative { denom:: !Direction ,function:: !(SchemeType -> Position->Side->Term a), centered:: !Side, 
-        multiplier:: !(SchemeType->Position->Side-> a) } 
+        multiplier:: !(SchemeType->Position->Side-> a) }
+    | Derivative_adj { denom_adj:: !Direction ,function_adj:: !(SchemeType -> AdjPos ->Side->Term a), centered_adj:: !Side, 
+        multiplier_adj:: !(SchemeType->AdjPos->Side-> a) }  
 
 instance Functor Term where
     fmap f x = case x of
@@ -269,13 +270,15 @@ initialGrid =
         )
         (ValSet calcPos v av sl 0)
          $! obstacles
+
+initialGrid_adj = undefined    
     
 setVal:: ValSet Double -> Position -> Property -> Double -> ValSet Double
-setVal (ValSet p v av sl tl) pos property newVal = 
+setVal (ValSet p v av sl tl) pos prp newVal = 
     let subDict = case Map.lookup pos v  of
             Nothing -> Map.empty
             Just sb -> sb
-    in ValSet p (Map.insert pos (Map.insert property newVal subDict) v) av sl tl
+    in ValSet p (Map.insert pos (Map.insert prp newVal subDict) v) av sl tl
 
 setFaceArea :: ValSet Double -> Position -> Side -> Double -> ValSet Double
 setFaceArea (ValSet p v av sl tl) pos side newVal = 
@@ -299,6 +302,8 @@ inflowPositions =  makePositions $!  0 :  (map maxPos  $! enumFrom Y)
 
 makeAllPositions::[Position]
 makeAllPositions = makePositions $! map maxPos $! enumFrom X 
+         
+makeAllPositions_adj = undefined -- THIS IS THE MAIN THING TO DO         
          
 makePositions :: [Int] -> [Position]
 makePositions maxes =
@@ -365,6 +370,9 @@ offsetPosition (Position p d t) side = case side of
 
 getNode :: AdjGraph -> AdjPos -> AdjNode
 getNode (AdjGraph g _ _) (i,t) = g V.! t V.! i
+
+getNodeVal :: AdjGraph -> AdjPos -> Property -> Maybe Double
+getNodeVal g x p = Map.lookup p $ property $ getNode g x
 
 offsetPosition_adj:: AdjPos->Side -> AdjGraph ->AdjPos
 offsetPosition_adj (idx,t) side env = case side of
@@ -435,11 +443,48 @@ approximateDerivative deriv position vs= case deriv of
                 _ -> error "can't approx >1 order derivs. deriv must produce constants" 
         else
             let (s1, s2) = boundaryPair direction
-                n1 = (offsetPosition position s1)
-                n2 = (offsetPosition position s2)
+                n1 = offsetPosition position s1
+                n2 = offsetPosition position s2
                 sl =  sideLength direction position vs
                 sln1 = sideLength direction n1 vs
                 sln2 = sideLength direction n2 vs
+                interval = 2 * average [sl,sln1,sln2]
+                n1Val = func Nondirectional n1 side
+                n2Val = func Nondirectional n2 side
+                mult = m Nondirectional position side
+            in case (n1Val, n2Val) of
+                (Constant c1 , Constant c2) -> 
+                    Constant $ (c1-c2)*mult/interval  
+                _ -> error "can't approx >1 order derivs. deriv must produce constants"
+    _ -> error "can't approx something that isn't a deriv"
+    
+approximateDerivative_adj :: Term Double -> AdjPos -> AdjGraph -> Term Double
+approximateDerivative_adj deriv position vs= case deriv of 
+    (Derivative_adj direction func side m) ->
+        if directionFromCenter side == direction 
+        then
+            let neighbor = offsetPosition_adj position side vs
+                sl =  sideLength_adj direction position vs 
+                sln = sideLength_adj direction neighbor vs
+                interval = average [sl, sln ]
+                thisVal = func Nondirectional position Center 
+                neighborVal = func Nondirectional neighbor Center
+                neighborIsUpper = isUpperSide side  
+                f first = case (first, neighborIsUpper) of
+                    (True, True) -> neighborVal
+                    (False, False) -> neighborVal
+                    _-> thisVal
+                mult = m Nondirectional position Center
+            in case (f True, f False) of
+                (Constant c1 , Constant c2) -> Constant $ (c1-c2)*mult/interval 
+                _ -> error "can't approx >1 order derivs. deriv must produce constants" 
+        else
+            let (s1, s2) = boundaryPair direction
+                n1 = offsetPosition_adj position s1 vs
+                n2 = offsetPosition_adj position s2 vs
+                sl =  sideLength_adj direction position vs
+                sln1 = sideLength_adj direction n1 vs
+                sln2 = sideLength_adj direction n2 vs
                 interval = 2 * average [sl,sln1,sln2]
                 n1Val = func Nondirectional n1 side
                 n2Val = func Nondirectional n2 side
@@ -455,16 +500,16 @@ magnitude v = sqrt $ foldl' (\prev nVal ->prev + (nVal*nVal)) 0.0 v
 
 prop :: SchemeType -> Property -> Position -> Side -> ValSet Double -> Double
 prop schemeType =
-    let f scheme property pos side env  = 
+    let f scheme prp pos side env  = 
             if side == Center || side == Now || side == Prev 
-                then propCentralDiff property pos side env 
-                else scheme property pos side env 
+                then propCentralDiff prp pos side env 
+                else scheme prp pos side env 
     in 
         let scheme = case schemeType of
                 Directional -> f propLimitedSlope
                 Nondirectional -> f propLimitedSlope
             momentums = enumFrom U \\ enumFrom Density
-        in \property pos side env-> case property of
+        in \prp pos side env-> case prp of
                 Speed-> magnitude $ map (\nxt -> scheme nxt pos side env) momentums   
                 Vorticity -> 
                     let pairs = [(x,y) | x <- momentums , y <- tail $ dropWhile (/= x) momentums ]
@@ -485,9 +530,43 @@ prop schemeType =
                 Pressure ->
                     gasConstantR * scheme Temperature pos side env *
                         scheme Density pos side env
-                _-> scheme property pos side env  
+                _-> scheme prp pos side env  
 
-propDirectional property position side env =
+prop_adj :: SchemeType -> Property -> AdjPos -> Side -> AdjGraph -> Double
+prop_adj schemeType =
+    let f scheme prp pos side env  = 
+            if side == Center || side == Now || side == Prev 
+                then propCentralDiff_adj prp pos side env 
+                else scheme prp pos side env 
+    in 
+        let scheme = case schemeType of
+                Directional -> f propLimitedSlope_adj
+                Nondirectional -> f propLimitedSlope_adj
+            momentums = enumFrom U \\ enumFrom Density
+        in \prp pos side env-> case prp of
+                Speed-> magnitude $ map (\nxt -> scheme nxt pos side env) momentums   
+                Vorticity -> 
+                    let pairs = [(x,y) | x <- momentums , y <- tail $ dropWhile (/= x) momentums ]
+                        vortComponents = map (\(a,b) ->
+                                let makeDeriv m n 
+                                        = Derivative_adj (directionFromConvection m) 
+                                            (\_ p s -> Constant $ scheme n p s env) East -- east is arbitrary here  
+                                            (\_ _ _ -> 1) 
+                                    deriv1 = makeDeriv a b
+                                    deriv2 = makeDeriv b a
+                                in val (approximateDerivative_adj deriv1 pos env) -
+                                    val (approximateDerivative_adj deriv2 pos env)    
+                            ) pairs
+                    in magnitude vortComponents 
+                Mew -> 
+                    let t = scheme Temperature pos side env 
+                    in sutherlandLambda * (t**1.5)/ (t + sutherlandConstant)
+                Pressure ->
+                    gasConstantR * scheme Temperature pos side env *
+                        scheme Density pos side env
+                _-> scheme prp pos side env  
+
+propDirectional prp position side env =
     let neighbor = offsetPosition position side
         decide =
             let peclet = pecletNumber position side env  
@@ -497,12 +576,12 @@ propDirectional property position side env =
                         then propUpwindDiff peclet 
                         else propQUICK peclet)) 
     in case (isObstaclePosition neighbor || isObstaclePosition position
-                , isMomentum property 
+                , isMomentum prp 
                 ,elem side ( enumFrom East \\ enumFrom Center )
-                    && isConvected property ) of
+                    && isConvected prp ) of
         --(True,True,_)-> 0.0
-        (_,_,True) -> decide property position side env 
-        _ -> propCentralDiff property position side env 
+        (_,_,True) -> decide prp position side env 
+        _ -> propCentralDiff prp position side env 
         
 oppositeSide :: Side -> Side 
 oppositeSide s = 
@@ -512,7 +591,7 @@ oppositeSide s =
         then s2 else s1 
 
 propQUICK :: Double -> Property -> Position -> Side ->ValSet Double -> Double
-propQUICK pec property position side env = 
+propQUICK pec prp position side env = 
     let upper = if isUpperSide side then side else Center 
         lower = if isUpperSide side then Center else side
         doubleOffset pos = offsetPosition pos >>= offsetPosition
@@ -520,30 +599,47 @@ propQUICK pec property position side env =
             then offsetPosition position $ oppositeSide downBracket
             else doubleOffset position upBracket 
     in if pec >= 0
-        then ((6/8)* propCentralDiff property (offsetPosition position lower) Center env ) 
-            + ((3/8)* propCentralDiff property (offsetPosition position upper) Center env ) 
-            - ((1/8)* propCentralDiff property (farPoint lower upper) Center env ) 
-        else ((6/8)* propCentralDiff property (offsetPosition position upper) Center env ) 
-            + ((3/8)* propCentralDiff property (offsetPosition position lower) Center env ) 
-            - ((1/8)* propCentralDiff property (farPoint upper lower) Center env )
+        then ((6/8)* propCentralDiff prp (offsetPosition position lower) Center env ) 
+            + ((3/8)* propCentralDiff prp (offsetPosition position upper) Center env ) 
+            - ((1/8)* propCentralDiff prp (farPoint lower upper) Center env ) 
+        else ((6/8)* propCentralDiff prp (offsetPosition position upper) Center env ) 
+            + ((3/8)* propCentralDiff prp (offsetPosition position lower) Center env ) 
+            - ((1/8)* propCentralDiff prp (farPoint upper lower) Center env )
 
 propUpwindDiff :: Double -> Property -> Position -> Side -> ValSet Double -> Double              
-propUpwindDiff pec property position side env = 
+propUpwindDiff pec prp position side env = 
     let upper = if isUpperSide side then side else Center 
         lower = if isUpperSide side then Center else side
     in if pec >= 0
-        then propCentralDiff property (offsetPosition position lower) Center env
-        else propCentralDiff property (offsetPosition position upper) Center env
+        then propCentralDiff prp (offsetPosition position lower) Center env
+        else propCentralDiff prp (offsetPosition position upper) Center env
 
 -- http://www.ammar-hakim.org/_static/files/1010-muscl-hancock.pdf
 -- http://bulletin.pan.pl/(60-1)45.pdf
-propLimitedSlope property position side env = 
-    let valCenter = propCentralDiff property position Center env
+propLimitedSlope prp position side env = 
+    let valCenter = propCentralDiff prp position Center env
         d = directionFromCenter side
         -- interval = sideLength d position env
         (upper, lower) = boundaryPair d
         upperNVal:(lowerNVal:_)  
-            = map (\s -> propCentralDiff property (offsetPosition position s) Center env) 
+            = map (\s -> propCentralDiff prp (offsetPosition position s) Center env) 
+                [upper,lower] 
+        ave = superbee (upperNVal - valCenter) (valCenter - lowerNVal)
+        --ave = epsilon (upperNVal - valCenter) (valCenter - lowerNVal) (interval *interval *interval)
+        --ave = minmodLimit (upperNVal - valCenter) (valCenter - lowerNVal)
+        -- ave = ospre (upperNVal - valCenter) (valCenter - lowerNVal)
+        -- ave = vanLeer (upperNVal - valCenter) (valCenter - lowerNVal)
+        --ave = ((upperNVal - valCenter)+(valCenter - lowerNVal))/2
+    in (if isUpperSide side then (+) else (-)) valCenter  
+            $ 0.5 * ave   
+
+propLimitedSlope_adj prp position side env = 
+    let valCenter = propCentralDiff_adj prp position Center env
+        d = directionFromCenter side
+        interval = sideLength_adj d position env
+        (upper, lower) = boundaryPair d
+        upperNVal:(lowerNVal:_)  
+            = map (\s -> propCentralDiff_adj prp (offsetPosition_adj position s env) Center env) 
                 [upper,lower] 
         ave = superbee (upperNVal - valCenter) (valCenter - lowerNVal)
         --ave = epsilon (upperNVal - valCenter) (valCenter - lowerNVal) (interval *interval *interval)
@@ -555,7 +651,7 @@ propLimitedSlope property position side env =
             $ 0.5 * ave   
 
 propCentralDiff :: Property -> Position -> Side -> ValSet Double -> Double
-propCentralDiff property position side env = 
+propCentralDiff prp position side env = 
     let neighbor = offsetPosition position side
         noValError = error ("no value "
                             ++ 
@@ -563,58 +659,50 @@ propCentralDiff property position side env =
                                     [0..spatialDimens position-1] 
                             ++ " "
                             ++ show (timePos position)++ " "
-                            ++ show property ++ " "
+                            ++ show prp ++ " "
                             ++ show side)
         getVal:: Position -> Map.Map Position (Map.Map Property Double) -> Double
         getVal p set = fromMaybe 
             --noValError
-            (case property of
-                Density -> noValError
-                Temperature -> noValError
-                Pressure -> noValError 
-                _ -> case  Map.lookup (modifyPositionComponent p Time 0) (vals initialGrid )>>= Map.lookup property of
+            ( case  Map.lookup (modifyPositionComponent p Time 0) (vals initialGrid )>>= Map.lookup prp of
                         Nothing -> noValError
                         Just r -> r
             )   
-            (Map.lookup p set >>= Map.lookup property)
+            (Map.lookup p set >>= Map.lookup prp)
         res p = getVal p (vals env )
     in case (isObstaclePosition neighbor || isObstaclePosition position
-                , isMomentum property, position == neighbor) of
+                , isMomentum prp, position == neighbor) of
         --(True,True,_) -> 0.0
         (_,_,True) -> res position
         _ -> average [ res position, res neighbor]
 
 propCentralDiff_adj :: Property -> AdjPos -> Side -> AdjGraph-> Double
-propCentralDiff_adj property (idx,t) side env = 
-    let (n_idx, n_t) = offsetPosition_adj (idx,t) side env
-        thisNode = getNode env (idx,t)
-        originalPos = origPos thisNode
+propCentralDiff_adj prp (idx,t) side env = 
+    let neigh = offsetPosition_adj (idx,t) side env
+        neighborPos = origPos $ getNode env neigh
+        originalPos = origPos $ getNode env (idx,t)
         noValError = error ("no value "
                             ++ 
                                 foldl' (\prev nxt -> prev ++ " " ++ show (spatialPos originalPos !! nxt)) "" 
                                     [0..spatialDimens originalPos-1] 
                             ++ " "
                             ++ show t ++ " "
-                            ++ show property ++ " "
+                            ++ show prp ++ " "
                             ++ show side)
-        getVal:: Position -> Map.Map Position (Map.Map Property Double) -> Double
-        getVal p set = fromMaybe 
-            --noValError
-            (case property of
+        getVal (i_1,t_1) = case getNodeVal env (i_1,t_1) prp of
+            Just s -> s
+            Nothing -> case prp of
                 Density -> noValError
                 Temperature -> noValError
                 Pressure -> noValError 
-                _ -> case  Map.lookup (modifyPositionComponent p Time 0) (vals initialGrid )>>= Map.lookup property of
-                        Nothing -> noValError
-                        Just r -> r
-            )   
-            (Map.lookup p set >>= Map.lookup property)
-        res p = getVal p (vals env )
-    in case (isObstaclePosition neighbor || isObstaclePosition position
-                , isMomentum property, position == neighbor) of
+                _ -> case getNodeVal env (i_1, 0) prp of
+                    Just s1 -> s1
+                    Nothing -> noValError
+    in case (isObstaclePosition neighborPos || isObstaclePosition originalPos
+                , isMomentum prp, originalPos == neighborPos) of
         --(True,True,_) -> 0.0
-        (_,_,True) -> res position
-        _ -> average [ res position, res neighbor]
+        (_,_,True) -> getVal (idx,t)
+        _ -> average [ getVal (idx,t), getVal neigh]
 
 -- GEOMETRY STUFF 
  
@@ -690,14 +778,14 @@ shortestPath unvisited end visited = if unvisited==Map.empty
                             then (n1,(n2,n3)) else (p1,(p2,p3))  ) 
                         (end,(hugeNumber,end)) 
                         $ shuffle' (Map.toList unvisited) (Map.size unvisited) $ mkStdGen 137
-            neighbors = filter (`Map.notMember` visited) $ getNeighborsCorners pos 
+            neighbs = filter (`Map.notMember` visited) $ getNeighborsCorners pos 
             updatedUnvisited = foldl' (\prev nxt -> 
                     let newd = distance nxt pos + dist
                         oldd = fst $ fromMaybe (hugeNumber,end) (Map.lookup nxt prev) 
                     in if comparer (fromIntegral $ round $ newd*oldd*57) newd oldd 
                         then Map.insert nxt (newd,pos) prev
                         else prev
-                ) (Map.delete pos unvisited) neighbors
+                ) (Map.delete pos unvisited) neighbs
             updatedVisited = Map.insert pos (dist,predecessor ) visited
         in (if pos == end 
             then tracePath updatedVisited end [] 
@@ -741,11 +829,30 @@ sideArea s (Position p d _) vs = case s of
     _ -> fromMaybe  (error $ "error getting side area for " ++ show p ++ " " ++ show s)
             (Map.lookup (Position p d 0) (areaVal $! vs) >>= Map.lookup s)
 
+sideArea_adj :: Side -> AdjPos -> AdjGraph -> Double
+sideArea_adj side x env = case side of 
+    Now -> 1
+    Prev -> 1
+    _ ->
+        let node = getNode env x
+        in case Map.lookup side $ faceArea node of
+            Just a -> a
+            Nothing -> error $ "error getting side area for " ++ show (origPos node) ++ " " ++ show side
+
 sideLength :: Direction -> Position -> ValSet Double -> Double
 sideLength direction (Position p d _) vs = case direction of 
     Time -> timeStep
     _ -> fromMaybe  (error $ "error getting side length for " ++ show p ++ " " ++ show direction)
             (Map.lookup (Position p d 0) (sideLen $! vs) >>= Map.lookup direction)    
+            
+sideLength_adj :: Direction -> AdjPos -> AdjGraph -> Double
+sideLength_adj direction x env = case direction of 
+    Time -> timeStep
+    _ -> 
+        let node = getNode env x
+        in case Map.lookup direction $ edgeLen node of
+            Just l -> l
+            Nothing ->  error $ "error getting side length for " ++ show (origPos node) ++ " " ++ show direction
 
 chooseSlopeHelper :: forall a a1 s.
                        (Ord a1, Ord a, Num a1, Num a) =>
