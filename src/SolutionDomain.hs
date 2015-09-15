@@ -274,7 +274,30 @@ initialGrid =
          $! obstacles
 
 initialGrid_adj :: AdjGraph
-initialGrid_adj = undefined    
+initialGrid_adj = 
+    let cp = Set.fromList $ calculatedPositions initialGrid
+        list_nodes_unconnected = foldl'
+            (\list next_pos ->
+                AdjNode
+                    undefined
+                    undefined
+                    undefined
+                    undefined
+                    next_pos --origpos
+                    (Set.member next_pos cp)--active    
+                {-
+                faceArea :: Map.Map Side Double
+                ,edgeLen :: Map.Map Direction Double
+                ,property :: Map.Map Property Double
+                ,neighbors :: Map.Map Side Int 
+                ,origPos :: Position
+                ,active :: Bool
+                -}
+            )
+            [] makeAllPositions
+        list_nodes = undefined
+        aln = V.cons (V.fromList list_nodes) $ V.replicate (storedSteps-1) V.empty 
+    in AdjGraph aln 0 0
     
 setVal:: ValSet Double -> Position -> Property -> Double -> ValSet Double
 setVal (ValSet p v av sl tl) pos prp newVal = 
