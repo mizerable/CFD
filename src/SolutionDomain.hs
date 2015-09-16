@@ -309,7 +309,8 @@ initialGrid_adj =
                         ) 
                         op e 
                 ) list_nodes_unconnected   
-        aln = V.cons (V.fromList list_nodes) $ V.replicate (storedSteps-1) V.empty 
+        aln = V.cons (V.fromList list_nodes) $ V.replicate (storedSteps-1) 
+            $ V.replicate (length list_nodes) undefined -- this is fine , these are placeholder empty vals
     in AdjGraph aln 0 0
     
 setVal:: ValSet Double -> Position -> Property -> Double -> ValSet Double

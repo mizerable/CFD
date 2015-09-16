@@ -195,10 +195,6 @@ calcSteps_adj = [
 setNodeProperty (AdjNode f e p n o a ) prp value =
     AdjNode f e (Map.insert prp value p) n o a
 
-getNodeProperty (AdjNode _ _ p _ _ _ ) prp = case Map.lookup prp p of
-    Just v -> v
-    Nothing -> error $ "doesn't seem like this node has the requested property" ++ show prp
-
 runSingleStep adjgraph = foldl'
     (\prev next -> 
         let stepTime = next == 0
@@ -207,11 +203,12 @@ runSingleStep adjgraph = foldl'
         in corrected
         --in predicted
     )
-    adjgraph [0..2]
+    adjgraph [0..0]
 
 applyDiffEq_adj equations stepTime (AdjGraph aln cmt cat )=
     let new_cmt = if stepTime then pushUpTime cmt else cmt
         new_cat = if stepTime then cat + 1 else cat
+        source_grid = aln V.! cmt
         env = AdjGraph aln cmt cat 
         new_aln = V.map -- loop through time slots, only updating the one necessary
             (\i->
@@ -220,18 +217,18 @@ applyDiffEq_adj equations stepTime (AdjGraph aln cmt cat )=
                     then runPar $ parMap -- loop through the nodes
                         (\j ->
                             let pos = (j,cmt) -- cmt is used here because regardless of if you save it here or next time slot the source data is always this slot
-                                node = grid V.! j 
+                                node = source_grid V.! j 
                             in  foldl' (\prev (next_eq,alwaysRun ) -> -- loop through the equations to run on this node
                                             let discEquation = getDiscEqInstance (runReader next_eq env) pos  
                                                 solvedProperty = unknownProperty discEquation
                                                 newValue = solveUnknown discEquation pos env
-                                            in if alwaysRun || (active node)
+                                            in if alwaysRun || (active prev)
                                                 then setNodeProperty prev solvedProperty newValue
                                                 else prev
                                     ) node equations    
                         ) $ V.fromList [0.. (V.length grid -1 )]
                     else grid -- if the time slot isn't what's being updated then just give it back
-            ) $ V.fromList [0.. (V.length aln -1)]
+            ) $ V.fromList [0.. storedSteps -1 ]
     in AdjGraph new_aln new_cmt new_cat
 
 correctPrevTime (AdjGraph aln cmt cat ) equations = 
@@ -250,8 +247,8 @@ correctPrevTime (AdjGraph aln cmt cat ) equations =
                                 curr_node = curr_grid V.! j
                             in foldl' ( \prev (next_eq,alwaysRun)  -> -- loop through the equations just to know what property to correct
                                         let solvedProperty = unknownProperty (runReader next_eq env)
-                                            c = getNodeProperty curr_node solvedProperty
-                                            pp = getNodeProperty prev_prev_node solvedProperty
+                                            c = prop_adj Nondirectional solvedProperty (j,cmt) Center env  
+                                            pp = prop_adj Nondirectional solvedProperty (j,concrete_t) Center env   
                                             newValue = pp + (0.5 * ( c - pp))
                                         in if alwaysRun || (active prev)
                                             then setNodeProperty prev solvedProperty newValue
@@ -274,12 +271,19 @@ supportCalcSteps = []
 allPositionsCurrentTime env = 
     map (\(idx,_)-> (idx, currModTime env) ) makeAllPositions_adj 
 
+prevGrid g = (allNodes g) V.! (pushBackTime $ currModTime g)
+
+currGrid g = (allNodes g) V.! (currModTime g)
+
+totalDensity env= foldl' (\p n -> p + prop_adj Nondirectional Density n Center env ) 0.0 
+    $ map (\x-> (x, pushBackTime $ currModTime env) ) [0.. (V.length $ prevGrid env )-1]
+
 runTimeSteps_Print =
     foldM_
         (\prev step -> 
             let next =  runSingleStep prev 
             in do 
-                --{-
+                {-
                 -- use the most recent valset but one time step BACK because that will have been corrected. the most recent time level is NOT YET CORRECTED. it has JUST BEEN CALCULATED AND IS INTERMEDIATE
                 mapM_
                     (\nextProp ->
@@ -291,17 +295,18 @@ runTimeSteps_Print =
                         GP.plotAsync ( PNG.cons $ "c:\\temp\\"++ show nextProp ++ " LOGSCALE" ++ "\\"++show step ++".png") 
                         $! plotDomainLog $! adjGraphToGrid next  nextProp (1+maxPos Y) (quot (maxPos Z)  2)
                     ) $ enumFrom Speed
-                ---}
+                -}
                 putStrLn $ show $ length (allPositionsCurrentTime next)
                 putStrLn $ "step: " ++ show step 
                 putStrLn $ "timeLevel: " ++ show (currModTime next)
                 putStrLn $ "timeLevelAbsolute: " ++ show (currAbsTime next)
+                putStrLn $ "totalDensity: " ++ show (totalDensity next)
                 putStrLn " "
                 --putStrLn $ stringDomain U timeLevel (1 + maxPos Y) prev (quot (maxPos Z)  2)
                 return next
         )
         initialGrid_adj
-        [0..999999]
+        [0..6]
 
 {- 
 testTerms = [Unknown 2.4, Constant 1.2, Constant 3.112, Unknown (-0.21),  SubExpression (Expression [Constant 2, Constant 2, SubExpression (Expression [Unknown 0.33333])])]
@@ -392,6 +397,6 @@ main =
     -- >>= (\_ -> putStrLn $! stringDomain U (timePos $ head $ calculatedPositions runTimeSteps) (1+maxPos X) runTimeSteps  )
     -}
     -- >>= (\_ -> putStrLn $ show $  applyDiffEq_adj calcSteps_adj True initialGrid_adj)
-    >>= (\_ -> print (runSingleStep initialGrid_adj))
-    -- >>= (\_ -> runTimeSteps_Print )
+    -- >>= (\_ -> print (totalDensity $ runSingleStep $ runSingleStep initialGrid_adj))
+     >>= (\_ -> runTimeSteps_Print )
     
