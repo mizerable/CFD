@@ -41,6 +41,7 @@ solveUnknown (Equation l r _) position vs=
         sumConstants p n =  p + case n of
             Constant c-> c
             --Derivative {}-> sumExpression sumConstants [approximateDerivative_adj n position vs]  
+            Derivative_adj {}-> sumExpression sumConstants [approximateDerivative_adj n position vs]
             SubExpression s -> sumExpression sumConstants $! getTerms s
             _ -> 0
         sumExpression s = foldl' s 0

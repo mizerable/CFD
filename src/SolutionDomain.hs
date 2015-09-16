@@ -43,13 +43,13 @@ data AdjNode  = AdjNode {
     ,neighbors :: Map.Map Side Int 
     ,origPos :: Position
     ,active :: Bool
-}
+} deriving (Show)
 
 data AdjGraph = AdjGraph {
     allNodes:: V.Vector (V.Vector AdjNode)
     ,currModTime :: Int
     ,currAbsTime :: Int 
-}
+} deriving (Show)
 
 type AdjPos = (Int, Int) -- ( idx in vector, time position of vector modular time )  
 
@@ -276,26 +276,39 @@ initialGrid =
 initialGrid_adj :: AdjGraph
 initialGrid_adj = 
     let cp = Set.fromList $ calculatedPositions initialGrid
-        list_nodes_unconnected = foldl'
-            (\list next_pos ->
-                AdjNode
-                    undefined
-                    undefined
-                    undefined
-                    undefined
-                    next_pos --origpos
-                    (Set.member next_pos cp)--active    
-                {-
-                faceArea :: Map.Map Side Double
-                ,edgeLen :: Map.Map Direction Double
-                ,property :: Map.Map Property Double
-                ,neighbors :: Map.Map Side Int 
-                ,origPos :: Position
-                ,active :: Bool
-                -}
+        (list_nodes_unconnected,locations,_) = foldl'
+            (\(list,m,i) next_pos ->
+                (list ++ 
+                    [AdjNode
+                        (fromJust $ Map.lookup next_pos $ areaVal initialGrid)
+                        (fromJust $ Map.lookup next_pos $ sideLen initialGrid)
+                        (fromJust $ Map.lookup next_pos $ vals initialGrid)
+                        Map.empty
+                        next_pos --origpos
+                        (Set.member next_pos cp)--active
+                    ]    
+                , Map.insert next_pos i m 
+                , i+1)
             )
-            [] makeAllPositions
-        list_nodes = undefined
+            ([],Map.empty,0) makeAllPositions
+        list_nodes = 
+            map 
+                (\(AdjNode a b c neighbs op e) ->
+                    AdjNode a b c
+                        (
+                            foldl'
+                                (\prev x -> 
+                                    let n = offsetPosition op x
+                                        n_idx = Map.lookup n locations 
+                                    in case n_idx of 
+                                            Just l -> Map.insert x l prev
+                                            Nothing ->error $ "can't find previously added location when translating valset to adjgraph: " 
+                                                ++ show op ++ " | neighbor: " ++ show n ++ " | locations: " ++ show locations
+                                    --in Map.insert x 888 prev
+                                ) neighbs $ enumFrom East
+                        ) 
+                        op e 
+                ) list_nodes_unconnected   
         aln = V.cons (V.fromList list_nodes) $ V.replicate (storedSteps-1) V.empty 
     in AdjGraph aln 0 0
     
@@ -330,7 +343,7 @@ makeAllPositions::[Position]
 makeAllPositions = makePositions $! map maxPos $! enumFrom X 
          
 makeAllPositions_adj :: [AdjPos]         
-makeAllPositions_adj = undefined -- THIS IS THE MAIN THING TO DO         
+makeAllPositions_adj = map (\x-> (x,0)) [0.. length makeAllPositions - 1]         
          
 makePositions :: [Int] -> [Position]
 makePositions maxes =
