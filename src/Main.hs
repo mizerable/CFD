@@ -235,7 +235,7 @@ applyDiffEq_adj equations stepTime (AdjGraph aln cmt cat )=
     in AdjGraph new_aln new_cmt new_cat
 
 correctPrevTime (AdjGraph aln cmt cat ) equations = 
-    if cat > 0 
+    if cat > 1 
         then 
             let to_be_corrected_t = pushBackTime cmt
                 concrete_t = pushBackTime to_be_corrected_t
