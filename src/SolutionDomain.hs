@@ -8,7 +8,7 @@ import Data.Maybe
 import Data.List
 import System.Random.Shuffle
 import System.Random
-import qualified Data.Vector as V 
+import qualified Data.Vector as V
 
 data Sign = Positive | Zero | Negative deriving (Enum,Ord,Eq,Show)
 
@@ -28,7 +28,7 @@ data Position = Position {
     spatialPos:: ![Int]
     ,spatialDimens :: !Int 
     ,timePos:: !Int } deriving (Eq, Ord, Show)
-    
+        
 data ValSet a = ValSet{
     calculatedPositions:: ![Position]
     ,vals:: !(Map.Map Position (Map.Map Property a))
@@ -37,13 +37,13 @@ data ValSet a = ValSet{
     ,timeLevelAbsolute :: Int }
 
 data AdjNode  = AdjNode {
-    faceArea :: V.Vector (Maybe Double)--Map.Map Side Double
-    ,edgeLen :: V.Vector (Maybe Double) --Map.Map Direction Double
-    ,property :: V.Vector (Maybe Double) --Map.Map Property Double
-    ,neighbors :: V.Vector (Maybe Int) --Map.Map Side Int 
-    ,origPos :: Position
-    ,active :: Bool
-    ,index :: Int
+    faceArea :: !(V.Vector (Maybe Double ) )--Map.Map Side Double
+    ,edgeLen :: !(V.Vector (Maybe Double ) )--Map.Map Direction Double
+    ,property :: !(V.Vector (Maybe Double ) )--Map.Map Property Double
+    ,neighbors :: !(V.Vector (Maybe Int ) )--Map.Map Side Int 
+    ,origPos :: !(Position)
+    ,active :: !(Bool)
+    ,index :: !(Int)
 } deriving (Show)
 
 sideIndex s = case s of 
@@ -71,9 +71,9 @@ propIndex m p = case p of
     _-> error $ "property not stored, maybe it's derived property " ++ show p ++" " ++ m
 
 data AdjGraph = AdjGraph {
-    allNodes:: V.Vector (V.Vector AdjNode)
-    ,currModTime :: Int
-    ,currAbsTime :: Int 
+    allNodes:: !(V.Vector (V.Vector AdjNode))
+    ,currModTime :: !(Int)
+    ,currAbsTime :: !(Int)
 } deriving (Show)
 
 type AdjPos = (Int, Int) -- ( idx in vector, time position of vector modular time )  
@@ -166,7 +166,7 @@ boundaryPair d = case d of
      X -> (East,West)
      Y -> (North,South)
      Z -> (Top,Bottom)
-     Time -> (Now,Now) -- we don't use the previous time step, actually it's more like (future ,now)  but we don't have a future
+     Time -> (Now,Prev) 
 
 faceToDirections :: Side -> [Direction] 
 faceToDirections s = case s of
@@ -341,8 +341,7 @@ initialGrid_adj =
                         ) 
                         op e i
                 ) list_nodes_unconnected   
-        aln = V.cons (V.fromList list_nodes) $ V.replicate (storedSteps-1) 
-            $ V.replicate (length list_nodes) undefined -- this is fine , these are placeholder empty vals
+        aln = V.replicate storedSteps (V.fromList list_nodes) 
     in AdjGraph aln 0 0
     
 setVal:: ValSet Double -> Position -> Property -> Double -> ValSet Double
@@ -508,10 +507,7 @@ approximateDerivative_adj deriv position vs= case deriv of
                 thisVal = func Nondirectional position Center 
                 neighborVal = func Nondirectional neighbor Center
                 neighborIsUpper = isUpperSide side  
-                f first = case (first, neighborIsUpper) of
-                    (True, True) -> neighborVal
-                    (False, False) -> neighborVal
-                    _-> thisVal
+                f first = if first==neighborIsUpper then neighborVal else thisVal
                 mult = m Nondirectional position Center
             in case (f True, f False) of
                 (Constant c1 , Constant c2) -> Constant $ (c1-c2)*mult/interval 
