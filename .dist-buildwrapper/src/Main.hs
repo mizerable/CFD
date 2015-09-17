@@ -80,9 +80,7 @@ testEquation =
 
 --continuity::(Num a, Fractional a, RealFloat a)=> Reader (ValSet a) (Equation (Position-> [Term a]))
 --continuity::Reader AdjGraph (Equation (AdjPos-> [Term Double]))
-continuity = do
-    env <- ask
-    return $ let integrate = integUnknown env Density 
+continuity env = let integrate = integUnknown env Density 
         in Equation
             ((integrate Temporal [runReader drho_dt env] >>= integrate Spatial) 
               : integrateTerms integrate env ( divergenceWithProps [Density]) )
@@ -91,9 +89,7 @@ continuity = do
     
 --uMomentum::(Num a, Fractional a, RealFloat a)=> Reader (ValSet a) (Equation (Position-> [Term a]))
 --uMomentum::Reader (ValSet Double) (Equation (Position-> [Term Double]))
-uMomentum = do
-    env <- ask
-    return $ let integrate = integUnknown env U
+uMomentum env = let integrate = integUnknown env U
         in Equation
             (  [ integrate Temporal [runReader drhou_dt env] >>= integrate Spatial ]
                 ++ integrateTerms integrate env (divergenceWithProps [Density, U])
@@ -108,9 +104,7 @@ uMomentum = do
             U
 
 --vMomentum::Reader (ValSet Double) (Equation (Position-> [Term Double]))
-vMomentum = do
-    env <- ask
-    return $ let integrate = integUnknown env V
+vMomentum env = let integrate = integUnknown env V
         in Equation
             ([ integrate Temporal [runReader drhov_dt env] >>= integrate Spatial ]
                 ++ integrateTerms integrate env (divergenceWithProps [Density, V])
@@ -125,9 +119,7 @@ vMomentum = do
             V   
 
 --wMomentum::Reader (ValSet Double) (Equation (Position-> [Term Double]))
-wMomentum =  do
-    env <- ask
-    return $ let integrate = integUnknown env W 
+wMomentum env =  let integrate = integUnknown env W 
         in Equation
             ([ integrate Temporal [runReader drhow_dt env] >>= integrate Spatial ]
                 ++ integrateTerms integrate env (divergenceWithProps [Density , W] ) 
@@ -141,9 +133,7 @@ wMomentum =  do
             )
             W      
 
-dye = do
-    env <- ask
-    return $ let integrate = integUnknown env Dye 
+dye env = let integrate = integUnknown env Dye 
         in Equation
             ([ integrate Temporal [runReader drhodye_dt env] >>= integrate Spatial ]
                 ++ integrateTerms integrate env (divergenceWithProps [Density , Dye] ) 
@@ -154,9 +144,7 @@ dye = do
             Dye
 
 --energy::Reader (ValSet Double) (Equation (Position-> [Term Double]))
-energy =  do
-    env <- ask
-    return $ let integrate = integUnknown env Temperature
+energy env = let integrate = integUnknown env Temperature
         in Equation
             ([ integrate Temporal [runReader drhoT_dt env] >>= integrate Spatial ]
                 ++ integrateTerms integrate env (divergenceWithPropsFactor [Density,Temperature] specificHeatCv ) 
@@ -192,8 +180,8 @@ calcSteps_adj = [
     ,(dye, False)
     ] 
 
-setNodeProperty (AdjNode f e p n o a ) prp value =
-    AdjNode f e (Map.insert prp value p) n o a
+setNodeProperty (AdjNode f e p n o a i) prp value =
+    AdjNode f e (p V.// [(propIndex "from setNodeProp" prp ,Just value)] ) n o a i
 
 runSingleStep adjgraph = foldl'
     (\prev next -> 
@@ -203,7 +191,7 @@ runSingleStep adjgraph = foldl'
         in corrected
         --in predicted
     )
-    adjgraph [0..0]
+    adjgraph [0..2]
 
 applyDiffEq_adj equations stepTime (AdjGraph aln cmt cat )=
     let new_cmt = if stepTime then pushUpTime cmt else cmt
@@ -215,18 +203,18 @@ applyDiffEq_adj equations stepTime (AdjGraph aln cmt cat )=
                 let grid = aln V.! i
                 in if i == new_cmt 
                     then runPar $ parMap -- loop through the nodes
-                        (\j ->
-                            let pos = (j,cmt) -- cmt is used here because regardless of if you save it here or next time slot the source data is always this slot
-                                node = source_grid V.! j 
+                        (\node ->
+                            let j = index node
+                                pos = (j,cmt) -- cmt is used here because regardless of if you save it here or next time slot the source data is always this slot
                             in  foldl' (\prev (next_eq,alwaysRun ) -> -- loop through the equations to run on this node
-                                            let discEquation = getDiscEqInstance (runReader next_eq env) pos  
+                                            let discEquation = getDiscEqInstance (next_eq env) pos  
                                                 solvedProperty = unknownProperty discEquation
                                                 newValue = solveUnknown discEquation pos env
                                             in if alwaysRun || (active prev)
                                                 then setNodeProperty prev solvedProperty newValue
                                                 else prev
                                     ) node equations    
-                        ) $ V.fromList [0.. (V.length grid -1 )]
+                        ) $ source_grid
                     else grid -- if the time slot isn't what's being updated then just give it back
             ) $ V.fromList [0.. storedSteps -1 ]
     in AdjGraph new_aln new_cmt new_cat
@@ -237,24 +225,21 @@ correctPrevTime (AdjGraph aln cmt cat ) equations =
             let to_be_corrected_t = pushBackTime cmt
                 concrete_t = pushBackTime to_be_corrected_t
                 prev_grid = aln V.! to_be_corrected_t
-                prev_prev_grid = aln V.! concrete_t
-                curr_grid = aln V.! cmt
                 env = AdjGraph aln cmt cat
                 corrected_prev_grid =  
                     runPar $ parMap -- loop through the nodes
-                        (\j -> 
-                            let prev_prev_node = prev_prev_grid V.! j
-                                curr_node = curr_grid V.! j
+                        (\prev_node -> 
+                            let j = index prev_node
                             in foldl' ( \prev (next_eq,alwaysRun)  -> -- loop through the equations just to know what property to correct
-                                        let solvedProperty = unknownProperty (runReader next_eq env)
+                                        let solvedProperty = unknownProperty (next_eq env)
                                             c = prop_adj Nondirectional solvedProperty (j,cmt) Center env  
                                             pp = prop_adj Nondirectional solvedProperty (j,concrete_t) Center env   
                                             newValue = pp + (0.5 * ( c - pp))
                                         in if alwaysRun || (active prev)
                                             then setNodeProperty prev solvedProperty newValue
                                             else prev
-                                ) (prev_grid V.! j) equations      
-                        ) $ V.fromList [0.. (V.length prev_grid -1 )]
+                                ) prev_node equations      
+                        ) $ prev_grid
                 corrected_aln = 
                     V.map
                         (\i->
@@ -262,7 +247,7 @@ correctPrevTime (AdjGraph aln cmt cat ) equations =
                             in if i == to_be_corrected_t 
                                 then corrected_prev_grid 
                                 else grid 
-                        ) $ V.fromList [0.. (V.length aln -1)]
+                        ) $ V.fromList [0.. storedSteps -1]
             in AdjGraph corrected_aln cmt cat
         else AdjGraph aln cmt cat 
         
@@ -306,7 +291,7 @@ runTimeSteps_Print =
                 return next
         )
         initialGrid_adj
-        [0..6]
+        [0..3]
 
 {- 
 testTerms = [Unknown 2.4, Constant 1.2, Constant 3.112, Unknown (-0.21),  SubExpression (Expression [Constant 2, Constant 2, SubExpression (Expression [Unknown 0.33333])])]

@@ -23,7 +23,7 @@ data Equation a = Equation{
     ,rhs:: ![a]
     ,unknownProperty:: !Property}    
 data IntegralType = Body | Surface deriving (Eq)
-data Property = Speed | Vorticity | U | V | W | Density | Temperature | Mew | Pressure|Dye deriving (Ord,Eq,Enum,Show)
+data Property = Speed | Vorticity | Pressure| U | V | W | Density | Temperature | Mew | Dye deriving (Ord,Eq,Enum,Show)
 data Position = Position {
     spatialPos:: ![Int]
     ,spatialDimens :: !Int 
@@ -37,13 +37,38 @@ data ValSet a = ValSet{
     ,timeLevelAbsolute :: Int }
 
 data AdjNode  = AdjNode {
-    faceArea :: Map.Map Side Double
-    ,edgeLen :: Map.Map Direction Double
-    ,property :: Map.Map Property Double
-    ,neighbors :: Map.Map Side Int 
+    faceArea :: V.Vector (Maybe Double)--Map.Map Side Double
+    ,edgeLen :: V.Vector (Maybe Double) --Map.Map Direction Double
+    ,property :: V.Vector (Maybe Double) --Map.Map Property Double
+    ,neighbors :: V.Vector (Maybe Int) --Map.Map Side Int 
     ,origPos :: Position
     ,active :: Bool
+    ,index :: Int
 } deriving (Show)
+
+sideIndex s = case s of 
+    East -> 0
+    West ->1
+    North ->2
+    South ->3
+    Top ->4
+    Bottom ->5
+    Center -> 6
+    Now -> 7
+    Prev -> 8
+    _-> error $ "side index not defined for this " ++ show s
+    
+dirIndex = getDirectionComponentIndex
+
+propIndex m p = case p of
+    U -> 0
+    V ->1
+    W ->2
+    Density ->3
+    Temperature ->4
+    Mew ->5
+    Dye ->6
+    _-> error $ "property not stored, maybe it's derived property " ++ show p ++" " ++ m
 
 data AdjGraph = AdjGraph {
     allNodes:: V.Vector (V.Vector AdjNode)
@@ -233,8 +258,7 @@ initialGridPre=
                 U-> 10
                 V-> 0
                 W-> 0
-                Density -> 0.3 -- 1.2
-                Pressure -> 10000 -- 101325   doesn't matter, gets solved based on density and temperature. 
+                Density -> 0.3 -- 1.2 
                 Mew -> initialMew
                 Temperature -> initialTemperature
                 Dye-> let midY = div (maxPos Y) 2
@@ -276,16 +300,23 @@ initialGrid =
 initialGrid_adj :: AdjGraph
 initialGrid_adj = 
     let cp = Set.fromList $ calculatedPositions initialGrid
+        toVector im d =
+            let inputs = Map.toList d
+            in V.foldl' 
+                (\prev (k,a)->prev V.// [( im k , Just a)] ) 
+                (V.replicate (length inputs) Nothing) 
+                $ V.fromList inputs
         (list_nodes_unconnected,locations,_) = foldl'
             (\(list,m,i) next_pos ->
                 (list ++ 
                     [AdjNode
-                        (fromJust $ Map.lookup next_pos $ areaVal initialGrid)
-                        (fromJust $ Map.lookup next_pos $ sideLen initialGrid)
-                        (fromJust $ Map.lookup next_pos $ vals initialGrid)
-                        Map.empty
+                        (toVector sideIndex $ fromJust $ Map.lookup next_pos $ areaVal initialGrid) --face area
+                        (toVector dirIndex $ fromJust $ Map.lookup next_pos $ sideLen initialGrid) -- side length
+                        (toVector (propIndex "from initializing") $ fromJust $ Map.lookup next_pos $ vals initialGrid) -- values
+                        (V.replicate (length $ enumFrom East) Nothing)--neighbors
                         next_pos --origpos
                         (Set.member next_pos cp)--active
+                        i --index
                     ]    
                 , Map.insert next_pos i m 
                 , i+1)
@@ -293,21 +324,22 @@ initialGrid_adj =
             ([],Map.empty,0) makeAllPositions
         list_nodes = 
             map 
-                (\(AdjNode a b c neighbs op e) ->
-                    AdjNode a b c
+                (\(AdjNode a b c neighbs op e i) ->
+                    AdjNode 
+                        a b c
                         (
                             foldl'
                                 (\prev x -> 
                                     let n = offsetPosition op x
                                         n_idx = Map.lookup n locations 
                                     in case n_idx of 
-                                            Just l -> Map.insert x l prev
+                                            Just l -> prev V.// [(sideIndex x , Just l )] 
                                             Nothing ->error $ "can't find previously added location when translating valset to adjgraph: " 
                                                 ++ show op ++ " | neighbor: " ++ show n ++ " | locations: " ++ show locations
                                     --in Map.insert x 888 prev
                                 ) neighbs $ enumFrom East
                         ) 
-                        op e 
+                        op e i
                 ) list_nodes_unconnected   
         aln = V.cons (V.fromList list_nodes) $ V.replicate (storedSteps-1) 
             $ V.replicate (length list_nodes) undefined -- this is fine , these are placeholder empty vals
@@ -352,17 +384,13 @@ makePositions maxes =
         posCoords = foldl' cartProd [[]] ranges
     in map (\coords -> Position coords (length coords) 0) posCoords
 
-setElem newElem index list = 
-    map (\x -> if x == index then newElem else list!!x) [0..length list -1]
+setElem newElem idx list = 
+    map (\x -> if x == idx then newElem else list!!x) [0..length list -1]
 
 modifyPositionComponent::Position -> Direction -> Int -> Position
 modifyPositionComponent (Position p d t) direction amt= case direction of 
     Time -> Position p d amt
     _ -> Position (setElem amt (getDirectionComponentIndex direction) p) d t
-
-offsetPositionComponent pos dir amt =
-    let curVal = getPositionComponent pos dir
-    in modifyPositionComponent pos dir (curVal+amt)
 
 isUpperSide:: Side -> Bool
 isUpperSide side = case side of
@@ -415,8 +443,11 @@ offsetPosition (Position p d t) side = case side of
 getNode :: AdjGraph -> AdjPos -> AdjNode
 getNode (AdjGraph g _ _) (i,t) = g V.! t V.! i
 
+-- used by central differencing,. ONLY FOR NON DERIVED 
 getNodeVal :: AdjGraph -> AdjPos -> Property -> Maybe Double
-getNodeVal g x p = Map.lookup p $ property $ getNode g x
+getNodeVal g x p =
+    let v = property $ getNode g x
+    in v V.! (propIndex "from getNodeVal(only in central diff)" p)  
 
 offsetPosition_adj:: AdjPos->Side -> AdjGraph ->AdjPos
 offsetPosition_adj (idx,t) side env = case side of
@@ -424,8 +455,8 @@ offsetPosition_adj (idx,t) side env = case side of
     Now -> (idx,t) 
     Prev -> (idx, pushBackTime t)   
     _ -> 
-        let neighs = neighbors $ getNode env (idx,t)   
-        in case Map.lookup side neighs of
+        let neighs = (neighbors $ getNode env (idx,t)) V.! (sideIndex side)
+        in case neighs of
             Just n -> (n,t)
             Nothing -> (idx,t)
 
@@ -808,7 +839,9 @@ sideArea_adj side x env = case side of
     Prev -> 1
     _ ->
         let node = getNode env x
-        in case Map.lookup side $ faceArea node of
+            v = faceArea node
+            fa = v V.! (sideIndex side)
+        in case fa of
             Just a -> a
             Nothing -> error $ "error getting side area for " ++ show (origPos node) ++ " " ++ show side
 
@@ -823,7 +856,9 @@ sideLength_adj direction x env = case direction of
     Time -> timeStep
     _ -> 
         let node = getNode env x
-        in case Map.lookup direction $ edgeLen node of
+            v = edgeLen node
+            sl = v V.! (dirIndex direction) 
+        in case sl of
             Just l -> l
             Nothing ->  error $ "error getting side length for " ++ show (origPos node) ++ " " ++ show direction
 
