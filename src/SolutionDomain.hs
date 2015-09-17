@@ -1,4 +1,4 @@
-{-# LANGUAGE ScopedTypeVariables, RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables, RankNTypes ,DeriveGeneric #-}
 module SolutionDomain where
 
 import qualified Data.Map.Strict as Map
@@ -9,6 +9,9 @@ import Data.List
 import System.Random.Shuffle
 import System.Random
 import qualified Data.Vector as V
+import GHC.Generics (Generic)
+
+import Control.DeepSeq
 
 data Sign = Positive | Zero | Negative deriving (Enum,Ord,Eq,Show)
 
@@ -27,7 +30,7 @@ data Property = Speed | Vorticity | Pressure| U | V | W | Density | Temperature 
 data Position = Position {
     spatialPos:: ![Int]
     ,spatialDimens :: !Int 
-    ,timePos:: !Int } deriving (Eq, Ord, Show)
+    ,timePos:: !Int } deriving (Eq, Ord, Show, Generic)
         
 data ValSet a = ValSet{
     calculatedPositions:: ![Position]
@@ -44,7 +47,13 @@ data AdjNode  = AdjNode {
     ,origPos :: !(Position)
     ,active :: !(Bool)
     ,index :: !(Int)
-} deriving (Show)
+} deriving (Show, Generic)
+
+data AdjGraph = AdjGraph {
+    allNodes:: !(V.Vector (V.Vector AdjNode))
+    ,currModTime :: !(Int)
+    ,currAbsTime :: !(Int)
+} deriving (Show, Generic)
 
 sideIndex s = case s of 
     East -> 0
@@ -69,12 +78,6 @@ propIndex m p = case p of
     Mew ->5
     Dye ->6
     _-> error $ "property not stored, maybe it's derived property " ++ show p ++" " ++ m
-
-data AdjGraph = AdjGraph {
-    allNodes:: !(V.Vector (V.Vector AdjNode))
-    ,currModTime :: !(Int)
-    ,currAbsTime :: !(Int)
-} deriving (Show)
 
 type AdjPos = (Int, Int) -- ( idx in vector, time position of vector modular time )  
 
@@ -127,8 +130,8 @@ storedSteps = 3
 
 maxPos :: Direction -> Int
 maxPos  d = case d of 
-    X -> 300
-    Y -> 150
+    X -> 60
+    Y -> 30
     Z -> 0
     Time -> error "no max time position"
     

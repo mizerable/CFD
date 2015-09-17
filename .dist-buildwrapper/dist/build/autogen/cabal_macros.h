@@ -21,6 +21,13 @@
   (major1) == 0 && (major2) <  5 || \
   (major1) == 0 && (major2) == 5 && (minor) <= 5)
 
+/* package deepseq-1.3.0.2 */
+#define VERSION_deepseq "1.3.0.2"
+#define MIN_VERSION_deepseq(major1,major2,minor) (\
+  (major1) <  1 || \
+  (major1) == 1 && (major2) <  3 || \
+  (major1) == 1 && (major2) == 3 && (minor) <= 0)
+
 /* package gnuplot-0.5.3.1 */
 #define VERSION_gnuplot "0.5.3.1"
 #define MIN_VERSION_gnuplot(major1,major2,minor) (\

@@ -1,4 +1,4 @@
-{-# LANGUAGE ScopedTypeVariables, RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables, RankNTypes , FlexibleInstances #-}
 module Main where
 
 import qualified Data.Map.Strict as Map 
@@ -19,11 +19,15 @@ import qualified Graphics.Gnuplot.Advanced as GP
 import qualified Graphics.Gnuplot.Plot.TwoDimensional as Plot2D
 import qualified Graphics.Gnuplot.Graph.TwoDimensional as Graph2D
 import Graphics.Gnuplot.Terminal.PNG as PNG 
+import Control.DeepSeq
+import GHC.Generics (Generic)
 
 instance Par.NFData Property 
-instance Par.NFData Position
 instance Par.NFData AdjNode
 
+instance Control.DeepSeq.NFData AdjGraph
+instance Control.DeepSeq.NFData Position
+instance Control.DeepSeq.NFData (V.Vector (V.Vector AdjNode))
  
 defltOpts :: Graph.C graph => Opts.T graph
 defltOpts = Opts.key False Opts.deflt
@@ -187,8 +191,8 @@ runSingleStep adjgraph = foldl'
     (\prev next -> 
         let stepTime = next == 0
             predicted = applyDiffEq_adj calcSteps_adj stepTime prev
-            corrected = correctPrevTime predicted calcSteps_adj
-        in corrected
+            corrected = correctPrevTime (predicted `seq` predicted ) calcSteps_adj
+        in corrected `seq` corrected
         --in predicted
     )
     adjgraph [0..2]
@@ -214,10 +218,10 @@ applyDiffEq_adj equations stepTime (AdjGraph aln cmt cat )=
                                                 then setNodeProperty prev solvedProperty newValue
                                                 else prev
                                     ) node equations    
-                        ) $ source_grid
-                    else grid -- if the time slot isn't what's being updated then just give it back
+                        ) $ source_grid `seq` source_grid
+                    else grid `seq` grid-- if the time slot isn't what's being updated then just give it back
             ) $ V.fromList [0.. storedSteps -1 ]
-    in AdjGraph new_aln new_cmt new_cat
+    in AdjGraph (new_aln `seq` new_aln) new_cmt new_cat
 
 correctPrevTime (AdjGraph aln cmt cat ) equations = 
     if cat > 1 
@@ -239,14 +243,14 @@ correctPrevTime (AdjGraph aln cmt cat ) equations =
                                             then setNodeProperty prev solvedProperty newValue
                                             else prev
                                 ) prev_node equations      
-                        ) $ prev_grid
+                        ) $ prev_grid 
                 corrected_aln = 
                     V.map
                         (\i->
                             let grid = aln V.! i
                             in if i == to_be_corrected_t 
-                                then corrected_prev_grid 
-                                else grid 
+                                then corrected_prev_grid `seq` corrected_prev_grid 
+                                else grid `seq` grid
                         ) $ V.fromList [0.. storedSteps -1]
             in AdjGraph corrected_aln cmt cat
         else AdjGraph aln cmt cat 
@@ -263,8 +267,14 @@ currGrid g = (allNodes g) V.! (currModTime g)
 totalDensity env= foldl' (\p n -> p + prop_adj Nondirectional Density n Center env ) 0.0 
     $ map (\x-> (x, pushBackTime $ currModTime env) ) [0.. (V.length $ prevGrid env )-1]
 
+foldM' :: (Monad m) => (a -> b -> m a) -> a -> [b] -> m a
+foldM' _ z [] = return z
+foldM' f z (x:xs) = do
+  z' <- f z x
+  z' `seq` foldM' f z' xs
+
 runTimeSteps_Print =
-    foldM_
+    foldM'
         (\prev step -> 
             let next =  runSingleStep prev 
             in do 
@@ -288,10 +298,10 @@ runTimeSteps_Print =
                 putStrLn $ "totalDensity: " ++ show (totalDensity next)
                 putStrLn " "
                 --putStrLn $ stringDomain U timeLevel (1 + maxPos Y) prev (quot (maxPos Z)  2)
-                return next
+                return $ force next
         )
         initialGrid_adj
-        [0..10]
+        [0..9999999]
 
 {- 
 testTerms = [Unknown 2.4, Constant 1.2, Constant 3.112, Unknown (-0.21),  SubExpression (Expression [Constant 2, Constant 2, SubExpression (Expression [Unknown 0.33333])])]
@@ -339,7 +349,7 @@ stringDomain prp  rowLength set zLevel =
         strRows = map ( foldl' (\prev next-> prev ++ " " ++ show next) "" ) rows
     in foldl' (\prev next -> prev ++ "\n" ++ next ) "" strRows 
             
-main:: IO()
+main:: IO AdjGraph
 main = 
     putStrLn "starting ..... "
     {-
