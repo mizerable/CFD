@@ -1,4 +1,4 @@
-{-# LANGUAGE ScopedTypeVariables, RankNTypes ,DeriveGeneric #-}
+{-# LANGUAGE ScopedTypeVariables, RankNTypes ,DeriveGeneric , FlexibleInstances #-}
 module SolutionDomain where
 
 import qualified Data.Map.Strict as Map
@@ -9,6 +9,7 @@ import Data.List
 import System.Random.Shuffle
 import System.Random
 import qualified Data.Vector as V
+
 import GHC.Generics (Generic)
 
 import Control.DeepSeq
@@ -50,10 +51,14 @@ data AdjNode  = AdjNode {
 } deriving (Show, Generic)
 
 data AdjGraph = AdjGraph {
-    allNodes:: !(V.Vector (V.Vector AdjNode))
+    allNodes:: !Grids
     ,currModTime :: !(Int)
     ,currAbsTime :: !(Int)
 } deriving (Show, Generic)
+
+data Grids = Grids {
+    grids :: !(V.Vector (V.Vector AdjNode))
+} deriving (Show, Generic) 
 
 sideIndex s = case s of 
     East -> 0
@@ -130,8 +135,8 @@ storedSteps = 3
 
 maxPos :: Direction -> Int
 maxPos  d = case d of 
-    X -> 60
-    Y -> 30
+    X -> 300
+    Y -> 150
     Z -> 0
     Time -> error "no max time position"
     
@@ -345,7 +350,7 @@ initialGrid_adj =
                         op e i
                 ) list_nodes_unconnected   
         aln = V.replicate storedSteps (V.fromList list_nodes) 
-    in AdjGraph aln 0 0
+    in AdjGraph (Grids aln) 0 0
     
 setVal:: ValSet Double -> Position -> Property -> Double -> ValSet Double
 setVal (ValSet p v av sl tl) pos prp newVal = 
@@ -443,7 +448,7 @@ offsetPosition (Position p d t) side = case side of
             $ maxOrMin boundary $ getPositionComponent position direction + offsetAmount   
 
 getNode :: AdjGraph -> AdjPos -> AdjNode
-getNode (AdjGraph g _ _) (i,t) = g V.! t V.! i
+getNode (AdjGraph g _ _) (i,t) = (grids g) V.! t V.! i
 
 -- used by central differencing,. ONLY FOR NON DERIVED 
 getNodeVal :: AdjGraph -> AdjPos -> Property -> Maybe Double

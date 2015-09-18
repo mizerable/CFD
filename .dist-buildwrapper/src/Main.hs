@@ -21,13 +21,15 @@ import qualified Graphics.Gnuplot.Graph.TwoDimensional as Graph2D
 import Graphics.Gnuplot.Terminal.PNG as PNG 
 import Control.DeepSeq
 import GHC.Generics (Generic)
+import qualified Control.DeepSeq 
 
 instance Par.NFData Property 
 instance Par.NFData AdjNode
 
+instance Control.DeepSeq.NFData AdjNode
 instance Control.DeepSeq.NFData AdjGraph
 instance Control.DeepSeq.NFData Position
-instance Control.DeepSeq.NFData (V.Vector (V.Vector AdjNode))
+instance Control.DeepSeq.NFData Grids
  
 defltOpts :: Graph.C graph => Opts.T graph
 defltOpts = Opts.key False Opts.deflt
@@ -191,8 +193,8 @@ runSingleStep adjgraph = foldl'
     (\prev next -> 
         let stepTime = next == 0
             predicted = applyDiffEq_adj calcSteps_adj stepTime prev
-            corrected = correctPrevTime (predicted `seq` predicted ) calcSteps_adj
-        in corrected `seq` corrected
+            corrected = correctPrevTime predicted calcSteps_adj
+        in corrected 
         --in predicted
     )
     adjgraph [0..2]
@@ -200,11 +202,11 @@ runSingleStep adjgraph = foldl'
 applyDiffEq_adj equations stepTime (AdjGraph aln cmt cat )=
     let new_cmt = if stepTime then pushUpTime cmt else cmt
         new_cat = if stepTime then cat + 1 else cat
-        source_grid = aln V.! cmt
+        source_grid = (grids aln) V.! cmt
         env = AdjGraph aln cmt cat 
         new_aln = V.map -- loop through time slots, only updating the one necessary
             (\i->
-                let grid = aln V.! i
+                let grid = (grids aln) V.! i
                 in if i == new_cmt 
                     then runPar $ parMap -- loop through the nodes
                         (\node ->
@@ -218,17 +220,17 @@ applyDiffEq_adj equations stepTime (AdjGraph aln cmt cat )=
                                                 then setNodeProperty prev solvedProperty newValue
                                                 else prev
                                     ) node equations    
-                        ) $ source_grid `seq` source_grid
-                    else grid `seq` grid-- if the time slot isn't what's being updated then just give it back
+                        ) $ source_grid 
+                    else grid -- if the time slot isn't what's being updated then just give it back
             ) $ V.fromList [0.. storedSteps -1 ]
-    in AdjGraph (new_aln `seq` new_aln) new_cmt new_cat
+    in AdjGraph (Grids new_aln)new_cmt new_cat
 
 correctPrevTime (AdjGraph aln cmt cat ) equations = 
     if cat > 1 
         then 
             let to_be_corrected_t = pushBackTime cmt
                 concrete_t = pushBackTime to_be_corrected_t
-                prev_grid = aln V.! to_be_corrected_t
+                prev_grid = (grids aln) V.! to_be_corrected_t
                 env = AdjGraph aln cmt cat
                 corrected_prev_grid =  
                     runPar $ parMap -- loop through the nodes
@@ -247,12 +249,12 @@ correctPrevTime (AdjGraph aln cmt cat ) equations =
                 corrected_aln = 
                     V.map
                         (\i->
-                            let grid = aln V.! i
+                            let grid = (grids aln) V.! i
                             in if i == to_be_corrected_t 
-                                then corrected_prev_grid `seq` corrected_prev_grid 
-                                else grid `seq` grid
+                                then corrected_prev_grid  
+                                else grid 
                         ) $ V.fromList [0.. storedSteps -1]
-            in AdjGraph corrected_aln cmt cat
+            in AdjGraph (force $ Grids corrected_aln) cmt cat
         else AdjGraph aln cmt cat 
         
 supportCalcSteps = []
@@ -260,9 +262,9 @@ supportCalcSteps = []
 allPositionsCurrentTime env = 
     map (\(idx,_)-> (idx, currModTime env) ) makeAllPositions_adj 
 
-prevGrid g = (allNodes g) V.! (pushBackTime $ currModTime g)
+prevGrid g = (grids $ allNodes g) V.! (pushBackTime $ currModTime g)
 
-currGrid g = (allNodes g) V.! (currModTime g)
+currGrid g = (grids $ allNodes g) V.! (currModTime g)
 
 totalDensity env= foldl' (\p n -> p + prop_adj Nondirectional Density n Center env ) 0.0 
     $ map (\x-> (x, pushBackTime $ currModTime env) ) [0.. (V.length $ prevGrid env )-1]

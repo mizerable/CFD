@@ -28,6 +28,13 @@
   (major1) == 1 && (major2) <  3 || \
   (major1) == 1 && (major2) == 3 && (minor) <= 0)
 
+/* package ghc-prim-0.3.1.0 */
+#define VERSION_ghc_prim "0.3.1.0"
+#define MIN_VERSION_ghc_prim(major1,major2,minor) (\
+  (major1) <  0 || \
+  (major1) == 0 && (major2) <  3 || \
+  (major1) == 0 && (major2) == 3 && (minor) <= 1)
+
 /* package gnuplot-0.5.3.1 */
 #define VERSION_gnuplot "0.5.3.1"
 #define MIN_VERSION_gnuplot(major1,major2,minor) (\
@@ -63,12 +70,12 @@
   (major1) == 0 && (major2) <  0 || \
   (major1) == 0 && (major2) == 0 && (minor) <= 4)
 
-/* package unordered-containers-0.2.4.0 */
-#define VERSION_unordered_containers "0.2.4.0"
+/* package unordered-containers-0.2.5.1 */
+#define VERSION_unordered_containers "0.2.5.1"
 #define MIN_VERSION_unordered_containers(major1,major2,minor) (\
   (major1) <  0 || \
   (major1) == 0 && (major2) <  2 || \
-  (major1) == 0 && (major2) == 2 && (minor) <= 4)
+  (major1) == 0 && (major2) == 2 && (minor) <= 5)
 
 /* package vector-0.10.9.1 */
 #define VERSION_vector "0.10.9.1"
